@@ -42,6 +42,27 @@ Set `DATABASE_URL`, Gmail variables, and `CORS_ORIGIN` in the Render environment
 
 `render.yaml` contains the matching Render Blueprint configuration.
 
+## GitHub Actions
+
+Two workflows run on push to `main`:
+
+- `.github/workflows/ci.yml` — installs dependencies, runs `npm run typecheck`, and builds the frontend and backend.
+- `.github/workflows/docker-publish.yml` — builds the Docker image and publishes it to GitHub Container Registry:
+
+```text
+ghcr.io/afrzlfaiz/gmail-nator
+```
+
+Tags published:
+
+- `latest` for every push to `main`
+- `vX.Y.Z` for semver tags
+- `sha-<long-sha>` for every build
+
+The publish workflow also triggers a Render deploy when the `RENDER_DEPLOY_HOOK` repository secret is configured. Add the secret in `Settings > Secrets and variables > Actions`, with the value from `Dashboard > Service > Settings > Deploy Hook`.
+
+A `.dockerignore` keeps the Docker build context clean (no `node_modules`, `.next`, `dist-server`, or `.env`).
+
 ## Gmail Worker
 
 Set all Gmail variables in `.env` to enable the incremental History API poller:

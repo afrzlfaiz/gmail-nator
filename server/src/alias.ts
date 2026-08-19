@@ -53,6 +53,18 @@ export function isGmailAddress(value: string) {
   return /^[a-z0-9][a-z0-9.+-]*@gmail\.com$/i.test(value);
 }
 
+export function isSourceAlias(address: string, sourceEmail: string) {
+  const normalized = normalizeAddress(address);
+  if (!isGmailAddress(normalized)) {
+    return false;
+  }
+
+  const localPart = normalized.split("@")[0];
+  const base = sourceLocalPart(sourceEmail);
+  const stripped = localPart.split("+")[0].replaceAll(".", "");
+  return stripped === base && (localPart.includes(".") || localPart.includes("+"));
+}
+
 export async function createUniqueMailbox(store: MailboxStore, sourceEmail: string, type: AliasType) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const address = normalizeAddress(generateAlias(sourceEmail, type));

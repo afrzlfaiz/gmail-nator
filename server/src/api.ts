@@ -1,7 +1,7 @@
 import { Router, type Request } from "express";
 import rateLimit from "express-rate-limit";
-import { createUniqueMailbox, isAliasType, isGmailAddress, normalizeAddress } from "./alias";
-import { AppError, NotFoundError } from "./errors";
+import { createUniqueMailbox, isAliasType, isGmailAddress, isSourceAlias, normalizeAddress } from "./alias";
+import { AppError, ConflictError, NotFoundError } from "./errors";
 import type { AppConfig } from "./config";
 import type { MailboxStore, Message } from "./types";
 
@@ -65,7 +65,29 @@ export function createApiRouter(store: MailboxStore, config: AppConfig, gmailRel
       throw new AppError(503, "GMAIL_RELAY_NOT_READY", "Gmail relay is not ready to receive mail yet");
     }
 
-    const mailbox = await createUniqueMailbox(store, config.gmailSourceEmail, type);
+    const requestedAddress = typeof request.body?.address === "string" ? request.body.address.trim() : "";
+    let mailbox;
+
+    if (requestedAddress) {
+      const address = normalizeAddress(requestedAddress);
+      if (!isSourceAlias(address, config.gmailSourceEmail)) {
+        throw new AppError(400, "INVALID_ADDRESS", "Address is not a valid alias of the source Gmail account");
+      }
+      if (await store.findMailboxByAddress(address)) {
+        throw new ConflictError("Mailbox address is already registered");
+      }
+      try {
+        mailbox = await store.createMailbox(address, type);
+      } catch (error) {
+        if (error instanceof ConflictError) {
+          throw new ConflictError("Mailbox address is already registered");
+        }
+        throw error;
+      }
+    } else {
+      mailbox = await createUniqueMailbox(store, config.gmailSourceEmail, type);
+    }
+
     response.status(201).json({
       address: mailbox.address,
       type: mailbox.type,

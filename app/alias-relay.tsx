@@ -54,6 +54,32 @@ const MODE_COPY: Record<AliasType, string> = {
   plus: "Add a unique tag before @gmail.com. The larger alias space makes this the default.",
 };
 
+function randomTag(length = 6) {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  for (let index = 0; index < length; index += 1) {
+    result += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return result;
+}
+
+function generateAlias(type: AliasType) {
+  if (type === "plus") {
+    return `ahmadrizal+${randomTag()}@gmail.com`;
+  }
+
+  const local = "ahmadrizal";
+  const forcedDotPosition = 1 + Math.floor(Math.random() * (local.length - 1));
+  let result = local[0];
+  for (let index = 1; index < local.length; index += 1) {
+    if (index === forcedDotPosition || Math.random() > 0.52) {
+      result += ".";
+    }
+    result += local[index];
+  }
+  return `${result}@gmail.com`;
+}
+
 function createInitialState(): AppState {
   return {
     history: [],
@@ -173,8 +199,8 @@ export default function AliasRelay() {
   const [currentAlias, setCurrentAlias] = useState("");
   const [currentAliasType, setCurrentAliasType] = useState<AliasType>("plus");
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
@@ -343,12 +369,37 @@ export default function AliasRelay() {
     setState(nextState);
   }
 
-  function openMailbox(address: string, type?: AliasType) {
+  function openMailbox(address: string, type?: AliasType, alreadyRegistered = false) {
     const knownType = state.history.find((entry) => entry.address === address)?.type ?? type ?? "plus";
-    rememberAlias(address, knownType);
-    setSelectedMessageId(null);
-    setRoute({ kind: "mailbox", address });
-    window.location.hash = encodeURIComponent(address);
+    if (alreadyRegistered) {
+      rememberAlias(address, knownType);
+      setSelectedMessageId(null);
+      setRoute({ kind: "mailbox", address });
+      window.location.hash = encodeURIComponent(address);
+      return;
+    }
+    void registerMailbox(address, knownType);
+  }
+
+  async function registerMailbox(address: string, type: AliasType) {
+    setIsSaving(true);
+    try {
+      const mailbox = await createMailboxApi(type, address);
+      rememberAlias(mailbox.address, mailbox.type);
+      setSelectedMessageId(null);
+      setRoute({ kind: "mailbox", address: mailbox.address });
+      window.location.hash = encodeURIComponent(mailbox.address);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 503) {
+        showToast("Gmail relay is not ready yet");
+      } else if (error instanceof ApiError && error.status === 409) {
+        showToast("This address is already registered");
+      } else {
+        showToast("Could not register the mailbox");
+      }
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function goHome() {
@@ -358,28 +409,12 @@ export default function AliasRelay() {
     }
   }
 
-  async function generateNewAlias(retryCount = 0) {
-    setIsGenerating(true);
-    let retryScheduled = false;
-    try {
-      const mailbox = await createMailboxApi(selectedType);
-      setCurrentAlias(mailbox.address);
-      setCurrentAliasType(mailbox.type);
-      showToast("New alias generated");
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 503 && retryCount < 10) {
-        retryScheduled = true;
-        showToast("Waiting for Gmail relay...");
-        window.setTimeout(() => void generateNewAlias(retryCount + 1), 2000);
-      } else {
-        showToast("Could not create a server mailbox");
-      }
-    } finally {
-      setIsGenerating(false);
-      if (!retryScheduled) {
-        setIsInitializing(false);
-      }
-    }
+  function generateNewAlias() {
+    const address = generateAlias(selectedType);
+    setCurrentAlias(address);
+    setCurrentAliasType(selectedType);
+    setIsInitializing(false);
+    showToast("Alias generated locally");
   }
 
   function clearHistory() {
@@ -559,17 +594,17 @@ export default function AliasRelay() {
                       <span className="meta-separator" aria-hidden="true" />
                       <span>{currentAlias ? "registered on server" : "waiting for relay"}</span>
                     </div>
-                    <button className="mailbox-cta" type="button" disabled={!currentAlias} onClick={() => openMailbox(currentAlias, currentAliasType)}>
-                      <span>Go to mailbox</span>
+                    <button className="mailbox-cta" type="button" disabled={!currentAlias || isSaving} onClick={() => openMailbox(currentAlias, currentAliasType)}>
+                      <span>{isSaving ? "Saving..." : "Go to mailbox"}</span>
                       <Icon name="arrow" />
                     </button>
                   </div>
 
-                  <button className="primary-button" type="button" disabled={isInitializing || isGenerating} onClick={() => void generateNewAlias()}>
-                    <span>{isInitializing || isGenerating ? "Creating mailbox..." : "Generate new alias"}</span>
+                  <button className="primary-button" type="button" disabled={isInitializing} onClick={generateNewAlias}>
+                    <span>{isInitializing ? "Creating mailbox..." : "Generate new alias"}</span>
                     <span className="button-arrow" aria-hidden="true">&gt;</span>
                   </button>
-                  <p className="panel-footnote">Click Go to mailbox to save the address to your history.</p>
+                  <p className="panel-footnote">Click Go to mailbox to register and save this address.</p>
                 </div>
               </section>
             </div>
@@ -586,7 +621,7 @@ export default function AliasRelay() {
                 <div className="history-list">
                   {state.history.length ? (
                     state.history.map((entry) => (
-                      <button className="history-item" type="button" key={entry.address} onClick={() => openMailbox(entry.address, entry.type)}>
+                      <button className="history-item" type="button" key={entry.address} onClick={() => openMailbox(entry.address, entry.type, true)}>
                         <span className={`history-type ${entry.type === "dot" ? "dot" : ""}`}>{entry.type === "dot" ? "." : "+"}</span>
                         <span className="history-address">{entry.address}</span>
                         <span className="history-date">{formatDate(entry.createdAt)}</span>

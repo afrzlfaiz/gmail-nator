@@ -67,10 +67,10 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function createMailbox(type: AliasType) {
+export function createMailbox(type: AliasType, address?: string) {
   return apiRequest<ApiMailbox>("/api/mailboxes", {
     method: "POST",
-    body: JSON.stringify({ type }),
+    body: JSON.stringify(address ? { type, address } : { type }),
   });
 }
 
