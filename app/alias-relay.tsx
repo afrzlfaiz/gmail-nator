@@ -63,12 +63,12 @@ function randomTag(length = 6) {
   return result;
 }
 
-function generateAlias(type: AliasType) {
+function generateAlias(type: AliasType, localPart: string) {
   if (type === "plus") {
-    return `ahmadrizal+${randomTag()}@gmail.com`;
+    return `${localPart}+${randomTag()}@gmail.com`;
   }
 
-  const local = "ahmadrizal";
+  const local = localPart.replaceAll(".", "").split("+")[0];
   const forcedDotPosition = 1 + Math.floor(Math.random() * (local.length - 1));
   let result = local[0];
   for (let index = 1; index < local.length; index += 1) {
@@ -199,13 +199,13 @@ export default function AliasRelay() {
   const [currentAlias, setCurrentAlias] = useState("");
   const [currentAliasType, setCurrentAliasType] = useState<AliasType>("plus");
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
-  const [isInitializing, setIsInitializing] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
   const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
   const [gmailRelayReady, setGmailRelayReady] = useState(false);
+  const [sourceLocal, setSourceLocal] = useState<string | null>(null);
 
   useEffect(() => {
     const stored = loadStoredState();
@@ -215,7 +215,6 @@ export default function AliasRelay() {
       setCurrentAlias(firstAlias.address);
       setSelectedType(firstAlias.type);
       setCurrentAliasType(firstAlias.type);
-      setIsInitializing(false);
     }
     setHasLoadedStorage(true);
 
@@ -244,17 +243,21 @@ export default function AliasRelay() {
 
     updateRoute();
     window.addEventListener("hashchange", updateRoute);
-
-    const rawHash = window.location.hash.slice(1);
-    const opensMailbox = rawHash.includes("@") || rawHash.includes("%40");
-    if (!firstAlias && !opensMailbox) {
-      void generateNewAlias();
-    } else if (!firstAlias) {
-      setIsInitializing(false);
-    }
-
     return () => window.removeEventListener("hashchange", updateRoute);
   }, []);
+
+  useEffect(() => {
+    if (!sourceLocal || state.history.length || route.kind === "mailbox") {
+      return;
+    }
+
+    const rawHash = window.location.hash.slice(1);
+    if (rawHash.includes("@") || rawHash.includes("%40")) {
+      return;
+    }
+
+    generateNewAlias();
+  }, [sourceLocal]);
 
   useEffect(() => {
     let cancelled = false;
@@ -264,6 +267,7 @@ export default function AliasRelay() {
         if (!cancelled) {
           setApiStatus("connected");
           setGmailRelayReady(health.gmailRelayReady);
+          setSourceLocal(health.sourceLocalPart);
         }
       } catch {
         if (!cancelled) {
@@ -410,10 +414,12 @@ export default function AliasRelay() {
   }
 
   function generateNewAlias() {
-    const address = generateAlias(selectedType);
+    if (!sourceLocal) {
+      return;
+    }
+    const address = generateAlias(selectedType, sourceLocal);
     setCurrentAlias(address);
     setCurrentAliasType(selectedType);
-    setIsInitializing(false);
     showToast("Alias generated locally");
   }
 
@@ -577,7 +583,7 @@ export default function AliasRelay() {
                   <div className="address-preview">
                     <span className="preview-label">Your temporary address</span>
                     <div className="address-line">
-                      <code className="address-value">{currentAlias || (isInitializing ? "Creating mailbox..." : "No mailbox yet")}</code>
+                      <code className="address-value">{currentAlias || (sourceLocal ? "No mailbox yet" : "Waiting for server source...")}</code>
                       <button
                         className="icon-button"
                         type="button"
@@ -600,8 +606,8 @@ export default function AliasRelay() {
                     </button>
                   </div>
 
-                  <button className="primary-button" type="button" disabled={isInitializing} onClick={generateNewAlias}>
-                    <span>{isInitializing ? "Creating mailbox..." : "Generate new alias"}</span>
+                  <button className="primary-button" type="button" disabled={!sourceLocal} onClick={generateNewAlias}>
+                    <span>{sourceLocal ? "Generate new alias" : "Waiting for server source..."}</span>
                     <span className="button-arrow" aria-hidden="true">&gt;</span>
                   </button>
                   <p className="panel-footnote">Click Go to mailbox to register and save this address.</p>

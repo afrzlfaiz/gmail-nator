@@ -4,6 +4,7 @@ import helmet from "helmet";
 import { createApiRouter } from "./api";
 import { AppError } from "./errors";
 import { hasGmailConfig, type AppConfig } from "./config";
+import { sourceLocalPart } from "./alias";
 import type { MailboxStore } from "./types";
 
 type AppOptions = {
@@ -38,6 +39,7 @@ export function createApp(store: MailboxStore, config: AppConfig, options: AppOp
       storage: store.kind,
       gmailPollingConfigured: hasGmailConfig(config),
       gmailRelayReady: options.gmailRelayReady?.() ?? false,
+      sourceLocalPart: sourceLocalPart(config.gmailSourceEmail),
     });
   });
 

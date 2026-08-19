@@ -6,7 +6,7 @@ export function normalizeAddress(address: string) {
   return address.trim().toLowerCase();
 }
 
-function sourceLocalPart(sourceEmail: string) {
+export function sourceLocalPart(sourceEmail: string) {
   const [localPart, domain] = normalizeAddress(sourceEmail).split("@");
   if (!localPart || domain !== "gmail.com") {
     throw new Error("GMAIL_SOURCE_EMAIL must be a valid @gmail.com address");

@@ -31,6 +31,7 @@ export type ApiHealth = {
   storage: "memory" | "postgres";
   gmailPollingConfigured: boolean;
   gmailRelayReady: boolean;
+  sourceLocalPart: string | null;
 };
 
 export class ApiError extends Error {
