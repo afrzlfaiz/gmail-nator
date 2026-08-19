@@ -6,7 +6,11 @@ import { AppError } from "./errors";
 import { hasGmailConfig, type AppConfig } from "./config";
 import type { MailboxStore } from "./types";
 
-export function createApp(store: MailboxStore, config: AppConfig) {
+type AppOptions = {
+  includeNotFound?: boolean;
+};
+
+export function createApp(store: MailboxStore, config: AppConfig, options: AppOptions = {}) {
   const app = express();
 
   app.disable("x-powered-by");
@@ -24,7 +28,8 @@ export function createApp(store: MailboxStore, config: AppConfig) {
   );
   app.use(express.json({ limit: "100kb" }));
 
-  app.get("/api/health", (_request, response) => {
+  app.get("/api/health", async (_request, response) => {
+    await store.ping();
     response.json({
       status: "ok",
       storage: store.kind,
@@ -34,9 +39,11 @@ export function createApp(store: MailboxStore, config: AppConfig) {
 
   app.use("/api", createApiRouter(store, config));
 
-  app.use((_request, response) => {
-    response.status(404).json({ error: "NOT_FOUND", message: "Route not found" });
-  });
+  if (options.includeNotFound !== false) {
+    app.use((_request, response) => {
+      response.status(404).json({ error: "NOT_FOUND", message: "Route not found" });
+    });
+  }
 
   const errorHandler: ErrorRequestHandler = (error, _request, response, next) => {
     if (response.headersSent) {

@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: gmail-nator
+    runtime: node
+    buildCommand: npm ci && npm run build:all
+    startCommand: npm run backend:start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: GMAIL_CLIENT_ID
+        sync: false
+      - key: GMAIL_CLIENT_SECRET
+        sync: false
+      - key: GMAIL_REDIRECT_URI
+        sync: false
+      - key: GMAIL_REFRESH_TOKEN
+        sync: false
+      - key: GMAIL_SOURCE_EMAIL
+        sync: false
+      - key: POLL_INTERVAL_MS
+        value: "10000"
+      - key: MESSAGE_RETENTION_DAYS
+        value: "7"
+      - key: MAX_MESSAGES_PER_MAILBOX
+        value: "20"

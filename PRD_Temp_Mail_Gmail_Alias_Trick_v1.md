@@ -292,8 +292,7 @@ GMAIL_CLIENT_SECRET=
 GMAIL_REFRESH_TOKEN=
 GMAIL_SOURCE_EMAIL=
 
-SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
+DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
 ```
 
 Refresh token Gmail tidak disimpan pada database untuk MVP.
@@ -851,7 +850,7 @@ Tidak boleh dikirim ke browser:
 ```text
 GMAIL_REFRESH_TOKEN
 GMAIL_CLIENT_SECRET
-SUPABASE_SERVICE_ROLE_KEY
+DATABASE_URL
 ```
 
 ### Public Mailbox
@@ -914,8 +913,7 @@ pemisahan tersebut dapat dilakukan kemudian.
 ```env
 PORT=3000
 
-SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
+DATABASE_URL=
 
 GMAIL_CLIENT_ID=
 GMAIL_CLIENT_SECRET=

@@ -4,8 +4,7 @@ export type AppConfig = {
   nodeEnv: string;
   port: number;
   corsOrigins: string[];
-  supabaseUrl?: string;
-  supabaseServiceRoleKey?: string;
+  databaseUrl?: string;
   gmailClientId?: string;
   gmailClientSecret?: string;
   gmailRedirectUri?: string;
@@ -44,8 +43,7 @@ export function loadConfig(): AppConfig {
     nodeEnv: process.env.NODE_ENV ?? "development",
     port: numberFromEnv("PORT", 4000, 1),
     corsOrigins,
-    supabaseUrl: optionalEnv("SUPABASE_URL"),
-    supabaseServiceRoleKey: optionalEnv("SUPABASE_SERVICE_ROLE_KEY"),
+    databaseUrl: optionalEnv("DATABASE_URL"),
     gmailClientId: optionalEnv("GMAIL_CLIENT_ID"),
     gmailClientSecret: optionalEnv("GMAIL_CLIENT_SECRET"),
     gmailRedirectUri: optionalEnv("GMAIL_REDIRECT_URI"),
@@ -57,8 +55,8 @@ export function loadConfig(): AppConfig {
   };
 }
 
-export function hasSupabaseConfig(config: AppConfig) {
-  return Boolean(config.supabaseUrl && config.supabaseServiceRoleKey);
+export function hasDatabaseConfig(config: AppConfig) {
+  return Boolean(config.databaseUrl);
 }
 
 export function hasGmailConfig(config: AppConfig) {

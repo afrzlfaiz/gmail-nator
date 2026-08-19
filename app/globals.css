@@ -325,6 +325,14 @@ svg {
   box-shadow: none;
 }
 
+.live-label.is-connected .status-dot {
+  background: var(--lime-dark);
+}
+
+.live-label.is-checking .status-dot {
+  background: var(--yellow);
+}
+
 .view {
   max-width: 1320px;
   margin: 0 auto;

@@ -4,17 +4,17 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "backend:dev": "tsx watch server/src/main.ts",
+    "backend:dev": "tsx watch server/src/api-main.ts",
     "backend:build": "tsc -p server/tsconfig.json",
     "backend:start": "node dist-server/main.js",
     "backend:typecheck": "tsc -p server/tsconfig.json --noEmit",
     "build": "next build",
     "build:all": "npm run build && npm run backend:build",
+    "dev:all": "concurrently --kill-others-on-fail --names frontend,backend --prefix-colors blue,green \"npm run dev\" \"npm run backend:dev\"",
     "start": "next start",
     "typecheck": "tsc --noEmit && npm run backend:typecheck"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.112.3",
     "cors": "2.8.6",
     "dotenv": "17.4.2",
     "express": "5.2.1",
@@ -22,6 +22,7 @@
     "googleapis": "176.0.0",
     "helmet": "8.3.0",
     "next": "16.3.1",
+    "pg": "8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
@@ -29,8 +30,10 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "concurrently": "^9.2.1",
     "tsx": "^4.23.12",
     "typescript": "^5.9.3"
   }

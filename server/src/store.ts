@@ -1,12 +1,30 @@
 import { randomUUID } from "node:crypto";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { Pool, type QueryResultRow } from "pg";
 import { normalizeAddress } from "./alias";
+import { hasDatabaseConfig, type AppConfig } from "./config";
 import { ConflictError } from "./errors";
-import { hasSupabaseConfig, type AppConfig } from "./config";
-import type { AliasType, Database, Mailbox, MailboxStore, Message, NewMessage } from "./types";
+import type { AliasType, Mailbox, MailboxStore, Message, NewMessage } from "./types";
 
-type MailboxRow = Database["public"]["Tables"]["mailboxes"]["Row"];
-type MessageRow = Database["public"]["Tables"]["messages"]["Row"];
+type MailboxRow = {
+  id: string;
+  address: string;
+  trick_type: AliasType;
+  created_at: string;
+};
+
+type MessageRow = {
+  id: string;
+  mailbox_id: string;
+  gmail_message_id: string;
+  sender: string | null;
+  recipient: string | null;
+  subject: string | null;
+  snippet: string | null;
+  body_html: string | null;
+  body_text: string | null;
+  received_at: string | null;
+  created_at: string;
+};
 
 function mapMailbox(row: MailboxRow): Mailbox {
   return {
@@ -42,11 +60,17 @@ function sortMessages(messages: Message[]) {
   });
 }
 
+function isUniqueViolation(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
+}
+
 export class InMemoryStore implements MailboxStore {
   readonly kind = "memory" as const;
   private readonly mailboxes = new Map<string, Mailbox>();
   private readonly messages = new Map<string, Message & { mailboxId: string }>();
   private readonly appState = new Map<string, string>();
+
+  async ping() {}
 
   async createMailbox(address: string, type: AliasType) {
     const normalized = normalizeAddress(address);
@@ -149,156 +173,183 @@ export class InMemoryStore implements MailboxStore {
   async setState(key: string, value: string) {
     this.appState.set(key, value);
   }
+
+  async close() {}
 }
 
-export class SupabaseStore implements MailboxStore {
-  readonly kind = "supabase" as const;
-  private readonly client: SupabaseClient<Database>;
+export class PostgresStore implements MailboxStore {
+  readonly kind = "postgres" as const;
+  private readonly pool: Pool;
 
-  constructor(url: string, serviceRoleKey: string) {
-    this.client = createClient<Database>(url, serviceRoleKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
+  constructor(connectionString: string) {
+    this.pool = new Pool({
+      connectionString,
+      max: 5,
+      connectionTimeoutMillis: 10_000,
+      idleTimeoutMillis: 30_000,
+      ssl: { rejectUnauthorized: false },
     });
+    this.pool.on("error", (error) => console.error("[ERROR] PostgreSQL pool error", error));
+  }
+
+  private query<Row extends QueryResultRow = QueryResultRow>(text: string, values: unknown[] = []) {
+    return this.pool.query<Row>(text, values);
+  }
+
+  async ping() {
+    await this.query("select 1");
   }
 
   async createMailbox(address: string, type: AliasType) {
-    const { data, error } = await this.client
-      .from("mailboxes")
-      .insert({ address: normalizeAddress(address), trick_type: type })
-      .select("*")
-      .single();
-
-    if (error) {
-      if (error.code === "23505") {
+    try {
+      const result = await this.query<MailboxRow>(
+        `
+          insert into public.mailboxes (address, trick_type)
+          values ($1, $2)
+          returning id, address, trick_type, created_at
+        `,
+        [normalizeAddress(address), type],
+      );
+      return mapMailbox(result.rows[0]);
+    } catch (error) {
+      if (isUniqueViolation(error)) {
         throw new ConflictError("Mailbox address is already registered");
       }
       throw error;
     }
-    return mapMailbox(data);
   }
 
   async findMailboxByAddress(address: string) {
-    const { data, error } = await this.client.from("mailboxes").select("*").eq("address", normalizeAddress(address)).maybeSingle();
-    if (error) {
-      throw error;
-    }
-    return data ? mapMailbox(data) : null;
+    const result = await this.query<MailboxRow>(
+      `select id, address, trick_type, created_at from public.mailboxes where lower(address) = lower($1) limit 1`,
+      [normalizeAddress(address)],
+    );
+    return result.rows[0] ? mapMailbox(result.rows[0]) : null;
   }
 
   async listMessages(address: string, limit: number) {
-    const mailbox = await this.findMailboxByAddress(address);
-    if (!mailbox) {
-      return [];
-    }
-
-    const { data, error } = await this.client
-      .from("messages")
-      .select("*")
-      .eq("mailbox_id", mailbox.id)
-      .order("received_at", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(limit);
-    if (error) {
-      throw error;
-    }
-    return (data ?? []).map(mapMessage);
+    const result = await this.query<MessageRow>(
+      `
+        select id, mailbox_id, gmail_message_id, sender, recipient, subject, snippet,
+               body_html, body_text, received_at, created_at
+        from public.messages
+        where mailbox_id = (
+          select id from public.mailboxes where lower(address) = lower($1) limit 1
+        )
+        order by received_at desc nulls last, created_at desc
+        limit $2
+      `,
+      [normalizeAddress(address), limit],
+    );
+    return result.rows.map(mapMessage);
   }
 
   async getMessage(id: string) {
-    const { data, error } = await this.client.from("messages").select("*").eq("id", id).maybeSingle();
-    if (error) {
-      throw error;
-    }
-    return data ? mapMessage(data) : null;
+    const result = await this.query<MessageRow>(
+      `
+        select id, mailbox_id, gmail_message_id, sender, recipient, subject, snippet,
+               body_html, body_text, received_at, created_at
+        from public.messages
+        where id = $1
+        limit 1
+      `,
+      [id],
+    );
+    return result.rows[0] ? mapMessage(result.rows[0]) : null;
   }
 
   async insertMessage(input: NewMessage) {
-    const { data, error } = await this.client
-      .from("messages")
-      .insert({
-        mailbox_id: input.mailboxId,
-        gmail_message_id: input.gmailMessageId,
-        sender: input.sender,
-        recipient: input.recipient,
-        subject: input.subject,
-        snippet: input.snippet,
-        body_html: input.bodyHtml,
-        body_text: input.bodyText,
-        received_at: input.receivedAt,
-      })
-      .select("*")
-      .single();
+    const values = [
+      input.mailboxId,
+      input.gmailMessageId,
+      input.sender,
+      input.recipient,
+      input.subject,
+      input.snippet,
+      input.bodyHtml,
+      input.bodyText,
+      input.receivedAt,
+    ];
+    const inserted = await this.query<MessageRow>(
+      `
+        insert into public.messages (
+          mailbox_id, gmail_message_id, sender, recipient, subject, snippet,
+          body_html, body_text, received_at
+        )
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        on conflict (gmail_message_id) do nothing
+        returning id, mailbox_id, gmail_message_id, sender, recipient, subject, snippet,
+                  body_html, body_text, received_at, created_at
+      `,
+      values,
+    );
 
-    if (error) {
-      if (error.code === "23505") {
-        const existing = await this.client.from("messages").select("*").eq("gmail_message_id", input.gmailMessageId).single();
-        if (existing.error) {
-          throw existing.error;
-        }
-        return mapMessage(existing.data);
-      }
-      throw error;
+    if (inserted.rows[0]) {
+      return mapMessage(inserted.rows[0]);
     }
-    return mapMessage(data);
+
+    const existing = await this.query<MessageRow>(
+      `
+        select id, mailbox_id, gmail_message_id, sender, recipient, subject, snippet,
+               body_html, body_text, received_at, created_at
+        from public.messages
+        where gmail_message_id = $1
+        limit 1
+      `,
+      [input.gmailMessageId],
+    );
+    if (!existing.rows[0]) {
+      throw new Error("Message conflict could not be resolved");
+    }
+    return mapMessage(existing.rows[0]);
   }
 
   async deleteMessage(id: string) {
-    const { data, error } = await this.client.from("messages").delete().eq("id", id).select("id");
-    if (error) {
-      throw error;
-    }
-    return Boolean(data?.length);
+    const result = await this.query<{ id: string }>("delete from public.messages where id = $1 returning id", [id]);
+    return Boolean(result.rows[0]);
   }
 
   async deleteMailbox(address: string) {
-    const { data, error } = await this.client.from("mailboxes").delete().eq("address", normalizeAddress(address)).select("id");
-    if (error) {
-      throw error;
-    }
-    return Boolean(data?.length);
+    const result = await this.query<{ id: string }>("delete from public.mailboxes where lower(address) = lower($1) returning id", [normalizeAddress(address)]);
+    return Boolean(result.rows[0]);
   }
 
   async trimMailboxMessages(mailboxId: string, limit: number) {
-    const { error } = await this.client.rpc("trim_mailbox_messages", { target_mailbox: mailboxId, keep_limit: limit });
-    if (error) {
-      throw error;
-    }
+    await this.query("select public.trim_mailbox_messages($1::uuid, $2::integer)", [mailboxId, limit]);
   }
 
   async deleteExpiredMessages(before: Date) {
-    const { data, error } = await this.client.from("messages").delete().lt("received_at", before.toISOString()).select("id");
-    if (error) {
-      throw error;
-    }
-    return data?.length ?? 0;
+    const result = await this.query<{ id: string }>("delete from public.messages where received_at < $1 returning id", [before]);
+    return result.rows.length;
   }
 
   async getState(key: string) {
-    const { data, error } = await this.client.from("app_state").select("value").eq("key", key).maybeSingle();
-    if (error) {
-      throw error;
-    }
-    return data?.value ?? null;
+    const result = await this.query<{ value: string | null }>("select value from public.app_state where key = $1 limit 1", [key]);
+    return result.rows[0]?.value ?? null;
   }
 
   async setState(key: string, value: string) {
-    const { error } = await this.client.from("app_state").upsert({ key, value });
-    if (error) {
-      throw error;
-    }
+    await this.query(
+      `
+        insert into public.app_state (key, value)
+        values ($1, $2)
+        on conflict (key) do update set value = excluded.value
+      `,
+      [key, value],
+    );
+  }
+
+  async close() {
+    await this.pool.end();
   }
 }
 
 export function createStore(config: AppConfig): MailboxStore {
-  if (hasSupabaseConfig(config)) {
-    console.info("[INFO] Using Supabase storage");
-    return new SupabaseStore(config.supabaseUrl!, config.supabaseServiceRoleKey!);
+  if (hasDatabaseConfig(config)) {
+    console.info("[INFO] Using PostgreSQL via Supabase session pooler");
+    return new PostgresStore(config.databaseUrl!);
   }
 
-  console.warn("[WARN] Supabase credentials are missing; using in-memory storage");
+  console.warn("[WARN] DATABASE_URL is missing; using in-memory storage");
   return new InMemoryStore();
 }

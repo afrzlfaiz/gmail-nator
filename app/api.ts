@@ -1,6 +1,6 @@
 import type { AliasType } from "./alias-relay-types";
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 
 export type ApiMailbox = {
   address: string;
@@ -24,6 +24,12 @@ export type ApiMessage = {
 type ApiMessagesResponse = {
   mailbox: string;
   messages: ApiMessage[];
+};
+
+export type ApiHealth = {
+  status: "ok";
+  storage: "memory" | "postgres";
+  gmailPollingConfigured: boolean;
 };
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -58,6 +64,10 @@ export function createMailbox(type: AliasType) {
     method: "POST",
     body: JSON.stringify({ type }),
   });
+}
+
+export function fetchApiHealth() {
+  return apiRequest<ApiHealth>("/api/health");
 }
 
 export function fetchMailboxMessages(address: string) {

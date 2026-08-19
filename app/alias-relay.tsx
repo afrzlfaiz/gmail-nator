@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createMailbox as createMailboxApi, deleteMailboxMessage, fetchMailboxMessages, type ApiMessage } from "./api";
+import { createMailbox as createMailboxApi, deleteMailboxMessage, fetchApiHealth, fetchMailboxMessages, type ApiMessage } from "./api";
 import { Icon } from "./icons";
 
 const SOURCE_LOCAL = "ahmadrizal";
@@ -17,6 +17,7 @@ type Route =
   | { kind: "home" }
   | { kind: "history" }
   | { kind: "mailbox"; address: string };
+type ApiStatus = "checking" | "connected" | "offline";
 
 type HistoryEntry = {
   address: string;
@@ -303,6 +304,7 @@ export default function AliasRelay() {
   const [toast, setToast] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
+  const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
 
   useEffect(() => {
     const stored = loadStoredState();
@@ -338,6 +340,29 @@ export default function AliasRelay() {
     updateRoute();
     window.addEventListener("hashchange", updateRoute);
     return () => window.removeEventListener("hashchange", updateRoute);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const checkApi = async () => {
+      try {
+        await fetchApiHealth();
+        if (!cancelled) {
+          setApiStatus("connected");
+        }
+      } catch {
+        if (!cancelled) {
+          setApiStatus("offline");
+        }
+      }
+    };
+
+    void checkApi();
+    const interval = window.setInterval(() => void checkApi(), 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
@@ -599,8 +624,9 @@ export default function AliasRelay() {
             <strong>Workspace</strong> / Public inbox utility
           </div>
           <div className="topbar-right">
-            <span className="live-label">
-              <span className="status-dot" aria-hidden="true" /> Prototype mode
+            <span className={`live-label is-${apiStatus}`}>
+              <span className="status-dot" aria-hidden="true" />
+              {apiStatus === "connected" ? "API connected" : apiStatus === "offline" ? "Prototype fallback" : "Connecting API"}
             </span>
           </div>
         </header>

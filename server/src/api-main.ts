@@ -1,5 +1,3 @@
-import express from "express";
-import next from "next";
 import { createApp } from "./app";
 import { hasGmailConfig, loadConfig } from "./config";
 import { CleanupJob } from "./cleanup";
@@ -7,28 +5,14 @@ import { createGmailClient } from "./gmail/client";
 import { GmailPoller } from "./gmail/poller";
 import { createStore } from "./store";
 
-async function startIntegratedServer() {
+export async function startApiServer() {
   const config = loadConfig();
   const store = createStore(config);
-  const apiApp = createApp(store, config, { includeNotFound: false });
+  const app = createApp(store, config);
   const cleanup = new CleanupJob(store, config);
   const poller = hasGmailConfig(config) ? new GmailPoller(createGmailClient(config), store, config) : null;
-  const nextApp = next({
-    dev: false,
-    hostname: "0.0.0.0",
-    port: config.port,
-  });
-
-  await nextApp.prepare();
-  const handleNextRequest = nextApp.getRequestHandler();
-  const app = express();
-  app.use(apiApp);
-  app.use((request, response) => {
-    void handleNextRequest(request, response);
-  });
-
   const server = app.listen(config.port, () => {
-    console.info(`[INFO] Render web service listening on port ${config.port}`);
+    console.info(`[INFO] API listening on port ${config.port}`);
     if (!poller) {
       console.warn("[WARN] Gmail polling disabled; OAuth environment variables are incomplete");
     }
@@ -43,7 +27,6 @@ async function startIntegratedServer() {
     console.info(`[INFO] ${signal} received; shutting down`);
     cleanup.stop();
     poller?.stop();
-    void nextApp.close();
     server.close((error) => {
       void store.close().finally(() => {
         if (error) {
@@ -59,7 +42,7 @@ async function startIntegratedServer() {
   process.once("SIGTERM", () => shutdown("SIGTERM"));
 }
 
-void startIntegratedServer().catch((error) => {
-  console.error("[ERROR] Render web service failed to start", error);
+void startApiServer().catch((error) => {
+  console.error("[ERROR] API failed to start", error);
   process.exitCode = 1;
 });
