@@ -10,6 +10,11 @@ const STORAGE_KEY = "alias-relay-prototype-v1";
 const MAX_MESSAGES = 20;
 const DEFAULT_ADDRESS = `${SOURCE_LOCAL}+inbox7@gmail.com`;
 const DISPLAY_TIME_ZONE = "Asia/Jakarta";
+const PLACEHOLDER_HISTORY_ADDRESSES = new Set([
+  DEFAULT_ADDRESS,
+  "ah.mad.rizal@gmail.com",
+  "a.hmad.rizal@gmail.com",
+]);
 
 type AliasType = "dot" | "plus";
 type MessageTone = "blue" | "coral" | "yellow";
@@ -86,23 +91,7 @@ const SAMPLE_MESSAGES: Omit<Message, "id" | "recipient" | "receivedAt">[] = [
 
 function createInitialState(): AppState {
   return {
-    history: [
-      {
-        address: DEFAULT_ADDRESS,
-        type: "plus",
-        createdAt: "2026-08-19T10:29:00+07:00",
-      },
-      {
-        address: "ah.mad.rizal@gmail.com",
-        type: "dot",
-        createdAt: "2026-08-17T09:12:00+07:00",
-      },
-      {
-        address: "a.hmad.rizal@gmail.com",
-        type: "dot",
-        createdAt: "2026-08-14T16:40:00+07:00",
-      },
-    ],
+    history: [],
     mailboxes: {
       [DEFAULT_ADDRESS]: {
         type: "plus",
@@ -157,12 +146,19 @@ function isAppState(value: unknown): value is AppState {
   return Array.isArray(candidate.history) && typeof candidate.mailboxes === "object" && candidate.mailboxes !== null;
 }
 
+function removePlaceholderHistory(state: AppState): AppState {
+  return {
+    ...state,
+    history: state.history.filter((entry) => !PLACEHOLDER_HISTORY_ADDRESSES.has(entry.address)),
+  };
+}
+
 function loadStoredState(): AppState {
   const fallback = createInitialState();
 
   try {
     const saved = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null") as unknown;
-    return isAppState(saved) ? saved : fallback;
+    return isAppState(saved) ? removePlaceholderHistory(saved) : fallback;
   } catch {
     return fallback;
   }
@@ -689,11 +685,11 @@ export default function AliasRelay() {
                       <span className={`type-badge ${currentAliasType === "dot" ? "dot" : ""}`}>{TYPE_LABELS[currentAliasType]}</span>
                       <span className="meta-separator" aria-hidden="true" />
                       <span>ready to receive</span>
-                      <button className="preview-open" type="button" onClick={() => openMailbox(currentAlias, currentAliasType)}>
-                        <span>Open mailbox</span>
-                        <Icon name="arrow" />
-                      </button>
                     </div>
+                    <button className="mailbox-cta" type="button" onClick={() => openMailbox(currentAlias, currentAliasType)}>
+                      <span>Go to mailbox</span>
+                      <Icon name="arrow" />
+                    </button>
                   </div>
 
                   <button className="primary-button" type="button" disabled={isGenerating} onClick={generateNewAlias}>

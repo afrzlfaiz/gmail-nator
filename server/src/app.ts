@@ -14,7 +14,9 @@ export function createApp(store: MailboxStore, config: AppConfig, options: AppOp
   const app = express();
 
   app.disable("x-powered-by");
-  app.use(helmet());
+  // Next.js emits inline hydration scripts. Keep Helmet's security headers but
+  // let Next control script policy for the integrated frontend response.
+  app.use(helmet({ contentSecurityPolicy: false }));
   app.use(
     cors({
       origin(origin, callback) {

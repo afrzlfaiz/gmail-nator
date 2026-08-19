@@ -613,28 +613,31 @@ svg {
   background: #b1b6a9;
 }
 
-.preview-open {
-  display: inline-flex;
+.mailbox-cta {
+  display: flex;
   align-items: center;
-  gap: 5px;
-  margin-left: auto;
-  padding: 3px 0;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 12px;
+  padding: 0 15px 0 17px;
+  border: 1px solid var(--ink);
+  border-radius: 9px;
   color: var(--ink);
-  background: transparent;
-  font-family: var(--mono);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  background: var(--coral);
+  font-size: 12px;
+  font-weight: 800;
+  transition: 160ms ease;
 }
 
-.preview-open:hover {
-  color: var(--coral);
+.mailbox-cta:hover {
+  color: var(--paper-light);
+  background: var(--ink);
 }
 
-.preview-open svg {
-  width: 13px;
-  height: 13px;
+.mailbox-cta svg {
+  width: 16px;
+  height: 16px;
 }
 
 .primary-button {
@@ -1574,10 +1577,6 @@ svg {
 
   .preview-meta {
     flex-wrap: wrap;
-  }
-
-  .preview-open {
-    margin-left: 0;
   }
 
   .history-item {
