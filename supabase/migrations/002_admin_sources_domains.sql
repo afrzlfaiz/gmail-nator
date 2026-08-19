@@ -103,3 +103,5 @@ alter table public.admin_credentials enable row level security;
 alter table public.admin_sessions enable row level security;
 alter table public.oauth_states enable row level security;
 alter table public.custom_domains enable row level security;
+
+drop table if exists public.app_state;

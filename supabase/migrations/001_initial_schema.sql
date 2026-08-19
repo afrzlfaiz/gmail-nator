@@ -33,14 +33,8 @@ create index if not exists idx_messages_mailbox_received
 create index if not exists idx_messages_received
     on public.messages (received_at);
 
-create table if not exists public.app_state (
-    key text primary key,
-    value text
-);
-
 alter table public.mailboxes enable row level security;
 alter table public.messages enable row level security;
-alter table public.app_state enable row level security;
 
 create or replace function public.trim_mailbox_messages(
     target_mailbox uuid,

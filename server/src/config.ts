@@ -13,8 +13,6 @@ export type AppConfig = {
   adminInitialPassword?: string;
   adminAppUrl?: string;
   adminSessionTtlHours: number;
-  gmailRefreshToken?: string;
-  gmailSourceEmail?: string;
   pollIntervalMs: number;
   messageRetentionDays: number;
   maxMessagesPerMailbox: number;
@@ -58,8 +56,6 @@ export function loadConfig(): AppConfig {
     adminInitialPassword: optionalEnv("ADMIN_INITIAL_PASSWORD"),
     adminAppUrl: optionalEnv("ADMIN_APP_URL") ?? (nodeEnv === "development" ? "http://localhost:3000" : undefined),
     adminSessionTtlHours: numberFromEnv("ADMIN_SESSION_TTL_HOURS", 12, 1),
-    gmailRefreshToken: optionalEnv("GMAIL_REFRESH_TOKEN"),
-    gmailSourceEmail: optionalEnv("GMAIL_SOURCE_EMAIL")?.toLowerCase(),
     pollIntervalMs: numberFromEnv("POLL_INTERVAL_MS", 10_000, 1_000),
     messageRetentionDays: numberFromEnv("MESSAGE_RETENTION_DAYS", 7, 1),
     maxMessagesPerMailbox: numberFromEnv("MAX_MESSAGES_PER_MAILBOX", 20, 1),

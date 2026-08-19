@@ -31,8 +31,8 @@ export type ApiHealth = {
   storage: "memory" | "postgres";
   gmailPollingConfigured: boolean;
   gmailRelayReady: boolean;
-  gmailSourceCount: number;
-  customDomainCount: number;
+  gmailSourceLocalParts: string[];
+  customDomains: string[];
 };
 
 export class ApiError extends Error {
@@ -42,7 +42,7 @@ export class ApiError extends Error {
   }
 }
 
-async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     credentials: "include",
@@ -70,10 +70,10 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function createMailbox(type: AliasType, address?: string) {
+export function createMailbox(type: AliasType, address: string) {
   return apiRequest<ApiMailbox>("/api/mailboxes", {
     method: "POST",
-    body: JSON.stringify(address ? { type, address } : { type }),
+    body: JSON.stringify({ type, address }),
   });
 }
 

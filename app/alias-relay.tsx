@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import DOMPurify from "isomorphic-dompurify";
 import { ApiError, createMailbox as createMailboxApi, deleteMailboxMessage, fetchApiHealth, fetchMailboxMessages, type ApiMessage } from "./api";
+import { generateAlias } from "./alias-generator";
 import { Icon } from "./icons";
 import type { AliasType } from "./alias-relay-types";
 
 const STORAGE_KEY = "alias-relay-state-v2";
 const MAX_MESSAGES = 20;
+const MAX_DISPLAYED_ALIASES = 20;
 const DISPLAY_TIME_ZONE = "Asia/Jakarta";
 
 type MessageTone = "blue" | "coral" | "yellow";
@@ -202,8 +204,8 @@ export default function AliasRelay() {
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
   const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
   const [gmailRelayReady, setGmailRelayReady] = useState(false);
-  const [sourceCount, setSourceCount] = useState(0);
-  const [customDomainCount, setCustomDomainCount] = useState(0);
+  const [sourceLocalParts, setSourceLocalParts] = useState<string[]>([]);
+  const [customDomains, setCustomDomains] = useState<string[]>([]);
 
   useEffect(() => {
     const stored = loadStoredState();
@@ -253,13 +255,15 @@ export default function AliasRelay() {
         if (!cancelled) {
           setApiStatus("connected");
           setGmailRelayReady(health.gmailRelayReady);
-          setSourceCount(health.gmailSourceCount);
-          setCustomDomainCount(health.customDomainCount);
+          setSourceLocalParts(health.gmailSourceLocalParts);
+          setCustomDomains(health.customDomains);
         }
       } catch {
         if (!cancelled) {
           setApiStatus("offline");
           setGmailRelayReady(false);
+          setSourceLocalParts([]);
+          setCustomDomains([]);
         }
       }
     };
@@ -389,7 +393,7 @@ export default function AliasRelay() {
       history: [
         { address, type, createdAt: new Date().toISOString() },
         ...state.history.filter((entry) => entry.address !== address),
-      ].slice(0, 20),
+      ].slice(0, MAX_DISPLAYED_ALIASES),
       mailboxes: state.mailboxes[address]
         ? state.mailboxes
         : { ...state.mailboxes, [address]: { type, messages: [] } },
@@ -441,23 +445,15 @@ export default function AliasRelay() {
     }
   }
 
-  async function generateNewAlias() {
-    setIsSaving(true);
+  function generateNewAlias() {
     try {
-      const mailbox = await createMailboxApi(selectedType);
-      setCurrentAlias(mailbox.address);
-      setCurrentAliasType(mailbox.type);
-      setCurrentAliasRegistered(true);
-      rememberAlias(mailbox.address, mailbox.type);
-      showToast("Alias generated and registered");
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 503) {
-        showToast(selectedType === "custom" ? "No custom domain is ready yet" : "No Gmail source is ready yet");
-      } else {
-        showToast("Could not generate the mailbox");
-      }
-    } finally {
-      setIsSaving(false);
+      const address = generateAlias(selectedType, sourceLocalParts, customDomains);
+      setCurrentAlias(address);
+      setCurrentAliasType(selectedType);
+      setCurrentAliasRegistered(false);
+      showToast("Alias generated locally");
+    } catch {
+      showToast(selectedType === "custom" ? "No custom domain is ready yet" : "No Gmail source is ready yet");
     }
   }
 
@@ -518,7 +514,7 @@ export default function AliasRelay() {
 
         <div className="source-status">
           <span className={`status-dot ${gmailRelayReady ? "is-ready" : apiStatus === "offline" ? "is-offline" : "is-checking"}`} aria-hidden="true" />
-          <span>{gmailRelayReady ? `Gmail relay ready / ${sourceCount} source${sourceCount === 1 ? "" : "s"}` : apiStatus === "offline" ? "Gmail relay unavailable" : "Checking Gmail relay"}</span>
+          <span>{gmailRelayReady ? `Gmail relay ready / ${sourceLocalParts.length} source${sourceLocalParts.length === 1 ? "" : "s"}` : apiStatus === "offline" ? "Gmail relay unavailable" : "Checking Gmail relay"}</span>
         </div>
 
         <nav className="sidebar-nav">
@@ -597,7 +593,7 @@ export default function AliasRelay() {
               <section className="generator-panel" aria-labelledby="generator-title">
                 <div className="panel-heading">
                   <span className="panel-label" id="generator-title">01 / Create an alias</span>
-                  <span className="source-label">{gmailRelayReady ? `${sourceCount} Gmail source${sourceCount === 1 ? "" : "s"} active` : "Server relay required"}</span>
+                  <span className="source-label">{gmailRelayReady ? `${sourceLocalParts.length} Gmail source${sourceLocalParts.length === 1 ? "" : "s"} active` : "Server relay required"}</span>
                 </div>
 
                 <div className="generator-form">
@@ -636,7 +632,7 @@ export default function AliasRelay() {
                     <div className="preview-meta">
                       <span className={`type-badge ${currentAliasType === "dot" ? "dot" : ""}`}>{TYPE_LABELS[currentAliasType]}</span>
                       <span className="meta-separator" aria-hidden="true" />
-                      <span>{currentAlias ? "registered on server" : "waiting for relay"}</span>
+                      <span>{currentAliasRegistered ? "registered on server" : currentAlias ? "generated in browser" : "waiting for relay"}</span>
                     </div>
                     <button className="mailbox-cta" type="button" disabled={!currentAlias || isSaving} onClick={() => openMailbox(currentAlias, currentAliasType, currentAliasRegistered)}>
                       <span>{isSaving ? "Saving..." : "Go to mailbox"}</span>
@@ -644,11 +640,11 @@ export default function AliasRelay() {
                     </button>
                   </div>
 
-                   <button className="primary-button" type="button" disabled={!gmailRelayReady || (selectedType === "custom" && customDomainCount === 0) || isSaving} onClick={() => void generateNewAlias()}>
-                     <span>{isSaving ? "Generating..." : gmailRelayReady ? selectedType === "custom" && customDomainCount === 0 ? "No custom domain configured" : "Generate new alias" : "Waiting for server source..."}</span>
+                    <button className="primary-button" type="button" disabled={!gmailRelayReady || (selectedType === "custom" && customDomains.length === 0) || isSaving} onClick={generateNewAlias}>
+                      <span>{isSaving ? "Generating..." : gmailRelayReady ? selectedType === "custom" && customDomains.length === 0 ? "No custom domain configured" : "Generate new alias" : "Waiting for server source..."}</span>
                     <span className="button-arrow" aria-hidden="true">&gt;</span>
                   </button>
-                   <p className="panel-footnote">Addresses are registered on the server as soon as they are generated.</p>
+                    <p className="panel-footnote">Generation happens in your browser. Click Go to mailbox to register the address.</p>
                 </div>
               </section>
             </div>
@@ -666,7 +662,7 @@ export default function AliasRelay() {
                   {state.history.length ? (
                     state.history.map((entry) => (
                       <button className="history-item" type="button" key={entry.address} onClick={() => openMailbox(entry.address, entry.type, true)}>
-                        <span className={`history-type ${entry.type === "dot" ? "dot" : ""}`}>{entry.type === "dot" ? "." : "+"}</span>
+                        <span className={`history-type ${entry.type === "dot" ? "dot" : ""}`}>{entry.type === "dot" ? "." : entry.type === "mixed" ? ".+" : entry.type === "custom" ? "@" : "+"}</span>
                         <span className="history-address">{entry.address}</span>
                         <span className="history-date">{formatDate(entry.createdAt)}</span>
                         <Icon name="arrow" />

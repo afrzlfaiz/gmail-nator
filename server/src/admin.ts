@@ -105,18 +105,10 @@ function ensureAllowedOrigin(request: Request, config: AppConfig) {
   }
 }
 
-function sourceId(request: Request) {
-  const value = request.params.id;
+function paramId(request: Request, name: "id", label: string) {
+  const value = request.params[name];
   if (typeof value !== "string" || !value) {
-    throw new AppError(400, "INVALID_SOURCE_ID", "Gmail source id is required");
-  }
-  return value;
-}
-
-function domainId(request: Request) {
-  const value = request.params.id;
-  if (typeof value !== "string" || !value) {
-    throw new AppError(400, "INVALID_DOMAIN_ID", "Custom domain id is required");
+    throw new AppError(400, `INVALID_${label}`, `${label} id is required`);
   }
   return value;
 }
@@ -206,7 +198,7 @@ export function createAdminRouter(store: MailboxStore, config: AppConfig, source
   });
 
   router.post("/sources/:id/connect", async (request: AdminRequest, response) => {
-    const id = sourceId(request);
+    const id = paramId(request, "id", "SOURCE");
     const source = await store.getGmailSource(id);
     if (!source) {
       throw new NotFoundError("Gmail source not found");
@@ -231,7 +223,7 @@ export function createAdminRouter(store: MailboxStore, config: AppConfig, source
   });
 
   router.patch("/sources/:id", async (request, response) => {
-    const id = sourceId(request);
+    const id = paramId(request, "id", "SOURCE");
     const source = await store.getGmailSource(id);
     if (!source) {
       throw new NotFoundError("Gmail source not found");
@@ -254,10 +246,6 @@ export function createAdminRouter(store: MailboxStore, config: AppConfig, source
     const updated = await store.updateGmailSource(id, patch);
     await sourceManager.reload();
     response.json({ source: adminSourceResponse(updated) });
-  });
-
-  router.get("/status", async (_request, response) => {
-    response.json({ sources: await sourceManager.listHealth() });
   });
 
   router.get("/domains", async (_request, response) => {
@@ -286,7 +274,7 @@ export function createAdminRouter(store: MailboxStore, config: AppConfig, source
   });
 
   router.patch("/domains/:id", async (request, response) => {
-    const id = domainId(request);
+    const id = paramId(request, "id", "DOMAIN");
     const domain = await store.getCustomDomain(id);
     if (!domain) {
       throw new NotFoundError("Custom domain not found");
@@ -316,7 +304,7 @@ export function createAdminRouter(store: MailboxStore, config: AppConfig, source
   });
 
   router.delete("/domains/:id", async (request, response) => {
-    const id = domainId(request);
+    const id = paramId(request, "id", "DOMAIN");
     const domain = await store.getCustomDomain(id);
     if (!domain) {
       throw new NotFoundError("Custom domain not found");

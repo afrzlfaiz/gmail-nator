@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { Pool, type QueryResultRow } from "pg";
 import { normalizeAddress } from "./alias";
 import { hasDatabaseConfig, type AppConfig } from "./config";
@@ -135,269 +134,14 @@ function mapCustomDomain(row: CustomDomainRow): CustomDomain {
   };
 }
 
-function sortMessages(messages: Message[]) {
-  return [...messages].sort((left, right) => {
-    const receivedDifference = new Date(right.receivedAt ?? 0).getTime() - new Date(left.receivedAt ?? 0).getTime();
-    if (receivedDifference !== 0) {
-      return receivedDifference;
-    }
-    return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
-  });
-}
-
 function isUniqueViolation(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
 }
 
-function normalizeSource(source: GmailSource): GmailSource {
-  return {
-    ...source,
-    email: normalizeAddress(source.email),
-  };
-}
-
-export class InMemoryStore implements MailboxStore {
-  readonly kind = "memory" as const;
-  private readonly mailboxes = new Map<string, Mailbox>();
-  private readonly messages = new Map<string, Message & { mailboxId: string }>();
-  private readonly appState = new Map<string, string>();
-  private readonly gmailSources = new Map<string, GmailSource>();
-  private readonly customDomains = new Map<string, CustomDomain>();
-  private adminPasswordHash: string | null = null;
-  private readonly adminSessions = new Map<string, { tokenHash: string; expiresAt: string }>();
-  private readonly oauthStates = new Map<string, { sessionTokenHash: string; sourceId: string; expiresAt: string }>();
-
-  async ping() {}
-
-  async createMailbox(address: string, type: AliasType, sourceId: string, domainId: string | null = null) {
-    const normalized = normalizeAddress(address);
-    if ([...this.mailboxes.values()].some((mailbox) => mailbox.address === normalized)) {
-      throw new ConflictError("Mailbox address is already registered");
-    }
-
-    const mailbox: Mailbox = {
-      id: randomUUID(),
-      address: normalized,
-      type,
-      sourceId,
-      domainId,
-      createdAt: new Date().toISOString(),
-    };
-    this.mailboxes.set(mailbox.id, mailbox);
-    return mailbox;
-  }
-
-  async findMailboxByAddress(address: string) {
-    return [...this.mailboxes.values()].find((mailbox) => mailbox.address === normalizeAddress(address)) ?? null;
-  }
-
-  async listMessages(address: string, limit: number) {
-    const mailbox = await this.findMailboxByAddress(address);
-    if (!mailbox) {
-      return [];
-    }
-
-    return sortMessages([...this.messages.values()].filter((message) => message.mailboxId === mailbox.id)).slice(0, limit);
-  }
-
-  async getMessage(id: string) {
-    const message = this.messages.get(id);
-    return message ? { ...message } : null;
-  }
-
-  async insertMessage(input: NewMessage) {
-    const existing = [...this.messages.values()].find(
-      (message) => message.sourceId === input.sourceId && message.gmailMessageId === input.gmailMessageId && message.mailboxId === input.mailboxId,
-    );
-    if (existing) {
-      return { ...existing };
-    }
-
-    const message: Message & { mailboxId: string } = {
-      id: randomUUID(),
-      mailboxId: input.mailboxId,
-      sourceId: input.sourceId,
-      gmailMessageId: input.gmailMessageId,
-      sender: input.sender,
-      recipient: input.recipient,
-      subject: input.subject,
-      snippet: input.snippet,
-      bodyHtml: input.bodyHtml,
-      bodyText: input.bodyText,
-      receivedAt: input.receivedAt,
-      createdAt: new Date().toISOString(),
-    };
-    this.messages.set(message.id, message);
-    return { ...message };
-  }
-
-  async deleteMessage(id: string) {
-    return this.messages.delete(id);
-  }
-
-  async deleteMailbox(address: string) {
-    const mailbox = await this.findMailboxByAddress(address);
-    if (!mailbox) {
-      return false;
-    }
-
-    this.mailboxes.delete(mailbox.id);
-    for (const [messageId, message] of this.messages) {
-      if (message.mailboxId === mailbox.id) {
-        this.messages.delete(messageId);
-      }
-    }
-    return true;
-  }
-
-  async trimMailboxMessages(mailboxId: string, limit: number) {
-    const mailboxMessages = sortMessages([...this.messages.values()].filter((message) => message.mailboxId === mailboxId));
-    for (const message of mailboxMessages.slice(limit)) {
-      this.messages.delete(message.id);
-    }
-  }
-
-  async deleteExpiredMessages(before: Date) {
-    let deleted = 0;
-    for (const [messageId, message] of this.messages) {
-      if (message.receivedAt && new Date(message.receivedAt) < before) {
-        this.messages.delete(messageId);
-        deleted += 1;
-      }
-    }
-    return deleted;
-  }
-
-  async getState(key: string) {
-    return this.appState.get(key) ?? null;
-  }
-
-  async setState(key: string, value: string) {
-    this.appState.set(key, value);
-  }
-
-  async listGmailSources() {
-    return [...this.gmailSources.values()].map(normalizeSource);
-  }
-
-  async getGmailSource(id: string) {
-    const source = this.gmailSources.get(id);
-    return source ? normalizeSource(source) : null;
-  }
-
-  async createGmailSource(email: string, label: string | null = null) {
-    const normalizedEmail = normalizeAddress(email);
-    if ([...this.gmailSources.values()].some((source) => source.email === normalizedEmail)) {
-      throw new ConflictError("Gmail source is already registered");
-    }
-    const now = new Date().toISOString();
-    const source: GmailSource = {
-      id: randomUUID(),
-      email: normalizedEmail,
-      label,
-      status: "pending",
-      refreshToken: null,
-      historyId: null,
-      lastPolledAt: null,
-      lastError: null,
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.gmailSources.set(source.id, source);
-    return source;
-  }
-
-  async updateGmailSource(id: string, patch: GmailSourcePatch) {
-    const current = this.gmailSources.get(id);
-    if (!current) {
-      return null;
-    }
-    const next = normalizeSource({ ...current, ...patch, updatedAt: new Date().toISOString() });
-    this.gmailSources.set(id, next);
-    return next;
-  }
-
-  async backfillLegacySource(_sourceId: string) {}
-
-  async listCustomDomains() {
-    return [...this.customDomains.values()];
-  }
-
-  async getCustomDomain(id: string) {
-    return this.customDomains.get(id) ?? null;
-  }
-
-  async createCustomDomain(domain: string, sourceId: string) {
-    const normalizedDomain = domain.trim().toLowerCase();
-    if ([...this.customDomains.values()].some((entry) => entry.domain === normalizedDomain)) {
-      throw new ConflictError("Custom domain is already registered");
-    }
-    const now = new Date().toISOString();
-    const customDomain: CustomDomain = {
-      id: randomUUID(),
-      domain: normalizedDomain,
-      sourceId,
-      enabled: true,
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.customDomains.set(customDomain.id, customDomain);
-    return customDomain;
-  }
-
-  async updateCustomDomain(id: string, patch: CustomDomainPatch) {
-    const current = this.customDomains.get(id);
-    if (!current) {
-      return null;
-    }
-    const next = { ...current, ...patch, updatedAt: new Date().toISOString() };
-    this.customDomains.set(id, next);
-    return next;
-  }
-
-  async getAdminPasswordHash() {
-    return this.adminPasswordHash;
-  }
-
-  async setAdminPasswordHash(hash: string) {
-    this.adminPasswordHash = hash;
-  }
-
-  async createAdminSession(tokenHash: string, expiresAt: Date) {
-    this.adminSessions.set(tokenHash, { tokenHash, expiresAt: expiresAt.toISOString() });
-  }
-
-  async getAdminSession(tokenHash: string) {
-    return this.adminSessions.get(tokenHash) ?? null;
-  }
-
-  async deleteAdminSession(tokenHash: string) {
-    this.adminSessions.delete(tokenHash);
-  }
-
-  async deleteExpiredAdminSessions(before: Date) {
-    for (const [tokenHash, session] of this.adminSessions) {
-      if (new Date(session.expiresAt) <= before) {
-        this.adminSessions.delete(tokenHash);
-      }
-    }
-  }
-
-  async createOAuthState(stateHash: string, sessionTokenHash: string, sourceId: string, expiresAt: Date) {
-    this.oauthStates.set(stateHash, { sessionTokenHash, sourceId, expiresAt: expiresAt.toISOString() });
-  }
-
-  async consumeOAuthState(stateHash: string) {
-    const state = this.oauthStates.get(stateHash);
-    this.oauthStates.delete(stateHash);
-    if (!state || new Date(state.expiresAt) <= new Date()) {
-      return null;
-    }
-    return state;
-  }
-
-  async close() {}
-}
+const MESSAGE_COLUMNS = `
+  id, source_id, mailbox_id, gmail_message_id, sender, recipient, subject, snippet,
+  body_html, body_text, received_at, created_at
+`;
 
 export class PostgresStore implements MailboxStore {
   readonly kind = "postgres" as const;
@@ -452,8 +196,7 @@ export class PostgresStore implements MailboxStore {
   async listMessages(address: string, limit: number) {
     const result = await this.query<MessageRow>(
       `
-        select id, source_id, mailbox_id, gmail_message_id, sender, recipient, subject, snippet,
-               body_html, body_text, received_at, created_at
+        select ${MESSAGE_COLUMNS}
         from public.messages
         where mailbox_id = (
           select id from public.mailboxes where lower(address) = lower($1) limit 1
@@ -464,20 +207,6 @@ export class PostgresStore implements MailboxStore {
       [normalizeAddress(address), limit],
     );
     return result.rows.map(mapMessage);
-  }
-
-  async getMessage(id: string) {
-    const result = await this.query<MessageRow>(
-      `
-        select id, source_id, mailbox_id, gmail_message_id, sender, recipient, subject, snippet,
-               body_html, body_text, received_at, created_at
-        from public.messages
-        where id = $1
-        limit 1
-      `,
-      [id],
-    );
-    return result.rows[0] ? mapMessage(result.rows[0]) : null;
   }
 
   async insertMessage(input: NewMessage) {
@@ -501,8 +230,7 @@ export class PostgresStore implements MailboxStore {
         )
         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         on conflict do nothing
-        returning id, source_id, mailbox_id, gmail_message_id, sender, recipient, subject, snippet,
-                  body_html, body_text, received_at, created_at
+        returning ${MESSAGE_COLUMNS}
       `,
       values,
     );
@@ -513,8 +241,7 @@ export class PostgresStore implements MailboxStore {
 
     const existing = await this.query<MessageRow>(
       `
-        select id, source_id, mailbox_id, gmail_message_id, sender, recipient, subject, snippet,
-               body_html, body_text, received_at, created_at
+        select ${MESSAGE_COLUMNS}
         from public.messages
         where source_id = $1 and gmail_message_id = $2 and mailbox_id = $3
         limit 1
@@ -532,11 +259,6 @@ export class PostgresStore implements MailboxStore {
     return Boolean(result.rows[0]);
   }
 
-  async deleteMailbox(address: string) {
-    const result = await this.query<{ id: string }>("delete from public.mailboxes where lower(address) = lower($1) returning id", [normalizeAddress(address)]);
-    return Boolean(result.rows[0]);
-  }
-
   async trimMailboxMessages(mailboxId: string, limit: number) {
     await this.query("select public.trim_mailbox_messages($1::uuid, $2::integer)", [mailboxId, limit]);
   }
@@ -544,22 +266,6 @@ export class PostgresStore implements MailboxStore {
   async deleteExpiredMessages(before: Date) {
     const result = await this.query<{ id: string }>("delete from public.messages where received_at < $1 returning id", [before]);
     return result.rows.length;
-  }
-
-  async getState(key: string) {
-    const result = await this.query<{ value: string | null }>("select value from public.app_state where key = $1 limit 1", [key]);
-    return result.rows[0]?.value ?? null;
-  }
-
-  async setState(key: string, value: string) {
-    await this.query(
-      `
-        insert into public.app_state (key, value)
-        values ($1, $2)
-        on conflict (key) do update set value = excluded.value
-      `,
-      [key, value],
-    );
   }
 
   async listGmailSources() {
@@ -643,11 +349,6 @@ export class PostgresStore implements MailboxStore {
       values,
     );
     return result.rows[0] ? mapGmailSource(result.rows[0]) : null;
-  }
-
-  async backfillLegacySource(sourceId: string) {
-    await this.query("update public.mailboxes set source_id = $1 where source_id is null", [sourceId]);
-    await this.query("update public.messages set source_id = $1 where source_id is null", [sourceId]);
   }
 
   async listCustomDomains() {
@@ -787,15 +488,10 @@ export class PostgresStore implements MailboxStore {
 }
 
 export function createStore(config: AppConfig): MailboxStore {
-  if (hasDatabaseConfig(config)) {
-    console.info("[INFO] Using PostgreSQL via Supabase session pooler");
-    return new PostgresStore(config.databaseUrl!);
+  if (!hasDatabaseConfig(config)) {
+    throw new Error("DATABASE_URL is required");
   }
 
-  if (config.nodeEnv === "production") {
-    throw new Error("DATABASE_URL is required in production");
-  }
-
-  console.warn("[WARN] DATABASE_URL is missing; using in-memory storage for development only");
-  return new InMemoryStore();
+  console.info("[INFO] Using PostgreSQL via Supabase session pooler");
+  return new PostgresStore(config.databaseUrl!);
 }

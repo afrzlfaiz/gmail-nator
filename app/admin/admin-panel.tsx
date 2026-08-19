@@ -1,8 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+import { ApiError, apiRequest } from "../api";
 
 type SourceStatus = "pending" | "active" | "disabled" | "reauth_required" | "error";
 
@@ -25,38 +24,6 @@ type Domain = {
   enabled: boolean;
 };
 
-class AdminApiError extends Error {
-  constructor(readonly status: number, message: string) {
-    super(message);
-  }
-}
-
-async function adminRequest<T>(path: string, init?: RequestInit) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    let message = `Request failed with status ${response.status}`;
-    try {
-      const body = (await response.json()) as { message?: string };
-      message = body.message ?? message;
-    } catch {
-      // Keep the status-based message when the server does not return JSON.
-    }
-    throw new AdminApiError(response.status, message);
-  }
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  return (await response.json()) as T;
-}
-
 function statusLabel(status: SourceStatus) {
   return status.replaceAll("_", " ");
 }
@@ -77,8 +44,8 @@ export default function AdminPanel() {
 
   async function loadDashboard() {
     const [sourceResponse, domainResponse] = await Promise.all([
-      adminRequest<{ sources: Source[] }>("/api/admin/sources"),
-      adminRequest<{ domains: Domain[] }>("/api/admin/domains"),
+      apiRequest<{ sources: Source[] }>("/api/admin/sources"),
+      apiRequest<{ domains: Domain[] }>("/api/admin/domains"),
     ]);
     setSources(sourceResponse.sources);
     setDomains(domainResponse.domains);
@@ -87,7 +54,7 @@ export default function AdminPanel() {
 
   useEffect(() => {
     let cancelled = false;
-    void adminRequest<{ authenticated: boolean }>("/api/admin/session")
+    void apiRequest<{ authenticated: boolean }>("/api/admin/session")
       .then(async (result) => {
         if (cancelled) {
           return;
@@ -100,7 +67,7 @@ export default function AdminPanel() {
       .catch((requestError: unknown) => {
         if (!cancelled) {
           setAuthenticated(false);
-          if (!(requestError instanceof AdminApiError && requestError.status === 401)) {
+          if (!(requestError instanceof ApiError && requestError.status === 401)) {
             setError(requestError instanceof Error ? requestError.message : "Unable to load admin session");
           }
         }
@@ -115,7 +82,7 @@ export default function AdminPanel() {
     setIsBusy(true);
     setError(null);
     try {
-      await adminRequest("/api/admin/login", { method: "POST", body: JSON.stringify({ password }) });
+      await apiRequest("/api/admin/login", { method: "POST", body: JSON.stringify({ password }) });
       setPassword("");
       setAuthenticated(true);
       await loadDashboard();
@@ -127,7 +94,7 @@ export default function AdminPanel() {
   }
 
   async function logout() {
-    await adminRequest("/api/admin/logout", { method: "POST" });
+    await apiRequest("/api/admin/logout", { method: "POST" });
     setAuthenticated(false);
     setSources([]);
     setDomains([]);
@@ -138,7 +105,7 @@ export default function AdminPanel() {
     setIsBusy(true);
     setError(null);
     try {
-      await adminRequest("/api/admin/sources", {
+      await apiRequest("/api/admin/sources", {
         method: "POST",
         body: JSON.stringify({ email: sourceEmail, label: sourceLabel, refreshToken: sourceRefreshToken }),
       });
@@ -158,7 +125,7 @@ export default function AdminPanel() {
     setIsBusy(true);
     setError(null);
     try {
-      const result = await adminRequest<{ authUrl: string }>(`/api/admin/sources/${encodeURIComponent(id)}/connect`, { method: "POST" });
+      const result = await apiRequest<{ authUrl: string }>(`/api/admin/sources/${encodeURIComponent(id)}/connect`, { method: "POST" });
       window.location.href = result.authUrl;
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Could not start Google OAuth");
@@ -170,7 +137,7 @@ export default function AdminPanel() {
     setIsBusy(true);
     setError(null);
     try {
-      await adminRequest(`/api/admin/sources/${encodeURIComponent(source.id)}`, {
+      await apiRequest(`/api/admin/sources/${encodeURIComponent(source.id)}`, {
         method: "PATCH",
         body: JSON.stringify({ status: source.status === "disabled" ? "active" : "disabled" }),
       });
@@ -187,7 +154,7 @@ export default function AdminPanel() {
     setIsBusy(true);
     setError(null);
     try {
-      await adminRequest("/api/admin/domains", {
+      await apiRequest("/api/admin/domains", {
         method: "POST",
         body: JSON.stringify({ domain: domainName, sourceId: domainSourceId }),
       });
@@ -205,7 +172,7 @@ export default function AdminPanel() {
     setIsBusy(true);
     setError(null);
     try {
-      await adminRequest(`/api/admin/domains/${encodeURIComponent(domain.id)}`, {
+      await apiRequest(`/api/admin/domains/${encodeURIComponent(domain.id)}`, {
         method: "PATCH",
         body: JSON.stringify({ enabled: !domain.enabled }),
       });

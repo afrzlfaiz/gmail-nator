@@ -3,6 +3,7 @@ import express, { type ErrorRequestHandler } from "express";
 import helmet from "helmet";
 import { createApiRouter } from "./api";
 import { createAdminRouter, createOAuthCallbackHandler } from "./admin";
+import { sourceLocalPart } from "./alias";
 import { AppError } from "./errors";
 import { type AppConfig } from "./config";
 import type { GmailSourceManager } from "./gmail/source-manager";
@@ -10,7 +11,6 @@ import type { MailboxStore } from "./types";
 
 type AppOptions = {
   includeNotFound?: boolean;
-  gmailRelayReady?: () => boolean;
   sourceManager: GmailSourceManager;
 };
 
@@ -40,13 +40,17 @@ export function createApp(store: MailboxStore, config: AppConfig, options: AppOp
     const sources = await options.sourceManager.listHealth();
     const domains = await store.listCustomDomains();
     const readySourceIds = new Set(sources.filter((source) => source.ready).map((source) => source.id));
+    const gmailSourceLocalParts = sources.filter((source) => source.ready).map((source) => sourceLocalPart(source.email));
+    const customDomains = domains
+      .filter((domain) => domain.enabled && readySourceIds.has(domain.sourceId))
+      .map((domain) => domain.domain);
     response.json({
       status: "ok",
       storage: store.kind,
       gmailPollingConfigured: sources.length > 0,
-      gmailRelayReady: options.sourceManager.isReady() || options.gmailRelayReady?.() || false,
-      gmailSourceCount: readySourceIds.size,
-      customDomainCount: domains.filter((domain) => domain.enabled && readySourceIds.has(domain.sourceId)).length,
+      gmailRelayReady: options.sourceManager.isReady(),
+      gmailSourceLocalParts,
+      customDomains,
     });
   });
 

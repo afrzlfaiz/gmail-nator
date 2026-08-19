@@ -21,7 +21,3 @@ export class NotFoundError extends AppError {
     super(404, "NOT_FOUND", message);
   }
 }
-
-export function isConflictError(error: unknown) {
-  return error instanceof ConflictError || (typeof error === "object" && error !== null && "code" in error && error.code === "23505");
-}
