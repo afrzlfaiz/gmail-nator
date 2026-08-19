@@ -979,6 +979,11 @@ svg {
   background: var(--paper-deep);
 }
 
+.secondary-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 .copy-button svg,
 .secondary-button svg {
   width: 14px;

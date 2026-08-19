@@ -2,7 +2,7 @@ type IconProps = {
   className?: string;
 };
 
-type IconName = "arrow" | "back" | "clipboard" | "history" | "home" | "plus";
+type IconName = "arrow" | "back" | "clipboard" | "history" | "home" | "plus" | "refresh";
 
 export function Icon({ name, className }: IconProps & { name: IconName }) {
   const sharedProps = {
@@ -51,6 +51,14 @@ export function Icon({ name, className }: IconProps & { name: IconName }) {
     return (
       <svg {...sharedProps}>
         <path d="M12 5v14M5 12h14" />
+      </svg>
+    );
+  }
+
+  if (name === "refresh") {
+    return (
+      <svg {...sharedProps}>
+        <path d="M20 11a8 8 0 0 0-14.8-3L3 10M3 5v5h5M4 13a8 8 0 0 0 14.8 3L21 14m0 5v-5h-5" />
       </svg>
     );
   }

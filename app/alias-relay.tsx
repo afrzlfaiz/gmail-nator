@@ -198,6 +198,7 @@ export default function AliasRelay() {
   const [currentAliasRegistered, setCurrentAliasRegistered] = useState(false);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [mailboxSyncNonce, setMailboxSyncNonce] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
@@ -338,6 +339,7 @@ export default function AliasRelay() {
   useEffect(() => {
     if (route.kind !== "mailbox") {
       setLastSyncedAt(null);
+      setIsRefreshing(false);
       return;
     }
 
@@ -363,6 +365,10 @@ export default function AliasRelay() {
         });
       } catch {
         // Keep the last successful server snapshot during a temporary API failure.
+      } finally {
+        if (!cancelled) {
+          setIsRefreshing(false);
+        }
       }
     };
 
@@ -443,6 +449,14 @@ export default function AliasRelay() {
     if (window.location.hash) {
       window.location.hash = "";
     }
+  }
+
+  function refreshMailbox() {
+    if (route.kind !== "mailbox") {
+      return;
+    }
+    setIsRefreshing(true);
+    setMailboxSyncNonce((nonce) => nonce + 1);
   }
 
   function generateNewAlias() {
@@ -721,6 +735,10 @@ export default function AliasRelay() {
                 <span className="message-count">{messages.length} / {MAX_MESSAGES} messages</span>
               </div>
               <div className="mailbox-actions">
+                <button className="secondary-button is-accent" type="button" onClick={refreshMailbox} disabled={isRefreshing}>
+                  <Icon name="refresh" />
+                  <span>{isRefreshing ? "Refreshing..." : "Refresh now"}</span>
+                </button>
                 <span className="polling-label">
                   <span className="status-dot" aria-hidden="true" /> Refreshes every 5 sec{lastSyncedAt ? ` / ${formatTime(lastSyncedAt)}` : ""}
                 </span>
