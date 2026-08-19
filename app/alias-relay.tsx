@@ -203,6 +203,7 @@ export default function AliasRelay() {
   const [currentAliasType, setCurrentAliasType] = useState<AliasType>("plus");
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [mailboxSyncNonce, setMailboxSyncNonce] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
@@ -310,6 +311,44 @@ export default function AliasRelay() {
   }, [toast]);
 
   useEffect(() => {
+    if (route.kind !== "mailbox" || state.history.some((entry) => entry.address === route.address)) {
+      return;
+    }
+
+    let cancelled = false;
+    const type: AliasType = route.address.includes("+") ? "plus" : "dot";
+    const ensureMailbox = async () => {
+      try {
+        const mailbox = await createMailboxApi(type, route.address);
+        if (cancelled) {
+          return;
+        }
+        rememberAlias(mailbox.address, mailbox.type);
+        setMailboxSyncNonce((nonce) => nonce + 1);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        if (error instanceof ApiError && error.status === 409) {
+          rememberAlias(route.address, type);
+          setMailboxSyncNonce((nonce) => nonce + 1);
+        } else if (error instanceof ApiError && error.status === 503) {
+          showToast("Gmail relay is not ready yet");
+        } else if (error instanceof ApiError && error.status === 400) {
+          showToast("This address is not a valid source alias");
+        } else {
+          showToast("Could not register this mailbox");
+        }
+      }
+    };
+
+    void ensureMailbox();
+    return () => {
+      cancelled = true;
+    };
+  }, [route.kind === "mailbox" ? route.address : null]);
+
+  useEffect(() => {
     if (route.kind !== "mailbox") {
       setLastSyncedAt(null);
       return;
@@ -346,7 +385,7 @@ export default function AliasRelay() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [route]);
+  }, [route, mailboxSyncNonce]);
 
   const mailbox =
     route.kind === "mailbox"
