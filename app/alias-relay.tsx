@@ -379,7 +379,7 @@ export default function AliasRelay() {
       rememberAlias(address, knownType);
       setSelectedMessageId(null);
       setRoute({ kind: "mailbox", address });
-      window.location.hash = encodeURIComponent(address);
+      window.location.hash = address;
       return;
     }
     void registerMailbox(address, knownType);
@@ -392,7 +392,7 @@ export default function AliasRelay() {
       rememberAlias(mailbox.address, mailbox.type);
       setSelectedMessageId(null);
       setRoute({ kind: "mailbox", address: mailbox.address });
-      window.location.hash = encodeURIComponent(mailbox.address);
+      window.location.hash = mailbox.address;
     } catch (error) {
       if (error instanceof ApiError && error.status === 503) {
         showToast("Gmail relay is not ready yet");

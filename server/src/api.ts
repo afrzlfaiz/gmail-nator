@@ -91,7 +91,7 @@ export function createApiRouter(store: MailboxStore, config: AppConfig, gmailRel
     response.status(201).json({
       address: mailbox.address,
       type: mailbox.type,
-      url: `/mailbox/#${encodeURIComponent(mailbox.address)}`,
+      url: `/mailbox/#${mailbox.address}`,
     });
   });
 
