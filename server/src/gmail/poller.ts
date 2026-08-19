@@ -16,6 +16,7 @@ function errorStatus(error: unknown) {
 export class GmailPoller {
   private timer: NodeJS.Timeout | null = null;
   private isPolling = false;
+  private relayReady = false;
 
   constructor(
     private readonly gmail: gmail_v1.Gmail,
@@ -44,6 +45,10 @@ export class GmailPoller {
       clearInterval(this.timer);
       this.timer = null;
     }
+  }
+
+  isReady() {
+    return this.relayReady;
   }
 
   private async currentCheckpoint() {
@@ -104,7 +109,9 @@ export class GmailPoller {
       if (latestHistoryId !== checkpoint) {
         await this.store.setState(HISTORY_STATE_KEY, latestHistoryId);
       }
+      this.relayReady = true;
     } catch (error) {
+      this.relayReady = false;
       if (errorStatus(error) === 404) {
         await this.resyncCheckpoint();
         console.warn("[WARN] Gmail history checkpoint expired; checkpoint resynced");

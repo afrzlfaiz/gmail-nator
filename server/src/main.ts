@@ -10,9 +10,12 @@ import { createStore } from "./store";
 async function startIntegratedServer() {
   const config = loadConfig();
   const store = createStore(config);
-  const apiApp = createApp(store, config, { includeNotFound: false });
   const cleanup = new CleanupJob(store, config);
   const poller = hasGmailConfig(config) ? new GmailPoller(createGmailClient(config), store, config) : null;
+  const apiApp = createApp(store, config, {
+    includeNotFound: false,
+    gmailRelayReady: () => poller?.isReady() ?? false,
+  });
   const nextApp = next({
     dev: false,
     hostname: "0.0.0.0",

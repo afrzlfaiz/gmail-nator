@@ -8,6 +8,7 @@ import type { MailboxStore } from "./types";
 
 type AppOptions = {
   includeNotFound?: boolean;
+  gmailRelayReady?: () => boolean;
 };
 
 export function createApp(store: MailboxStore, config: AppConfig, options: AppOptions = {}) {
@@ -36,10 +37,11 @@ export function createApp(store: MailboxStore, config: AppConfig, options: AppOp
       status: "ok",
       storage: store.kind,
       gmailPollingConfigured: hasGmailConfig(config),
+      gmailRelayReady: options.gmailRelayReady?.() ?? false,
     });
   });
 
-  app.use("/api", createApiRouter(store, config));
+  app.use("/api", createApiRouter(store, config, options.gmailRelayReady ?? (() => false)));
 
   if (options.includeNotFound !== false) {
     app.use((_request, response) => {

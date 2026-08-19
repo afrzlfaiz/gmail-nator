@@ -180,6 +180,15 @@ svg {
   box-shadow: 0 0 0 4px rgb(215 243 106 / 10%);
 }
 
+.source-status .status-dot.is-checking {
+  background: var(--yellow);
+}
+
+.source-status .status-dot.is-offline {
+  background: var(--coral);
+  box-shadow: none;
+}
+
 .sidebar-nav {
   display: grid;
   gap: 6px;
@@ -577,6 +586,12 @@ svg {
   background: var(--paper-deep);
 }
 
+.icon-button:disabled,
+.icon-button:disabled:hover {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .icon-button svg {
   width: 15px;
   height: 15px;
@@ -633,6 +648,14 @@ svg {
 .mailbox-cta:hover {
   color: var(--paper-light);
   background: var(--ink);
+}
+
+.mailbox-cta:disabled,
+.mailbox-cta:disabled:hover {
+  cursor: not-allowed;
+  color: #6c7470;
+  background: var(--paper-deep);
+  opacity: 0.7;
 }
 
 .mailbox-cta svg {

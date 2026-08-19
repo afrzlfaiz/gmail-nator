@@ -40,7 +40,7 @@ function messageResponse(message: Message) {
   };
 }
 
-export function createApiRouter(store: MailboxStore, config: AppConfig) {
+export function createApiRouter(store: MailboxStore, config: AppConfig, gmailRelayReady: () => boolean) {
   const router = Router();
   const generateLimiter = rateLimit({
     windowMs: 60_000,
@@ -60,6 +60,9 @@ export function createApiRouter(store: MailboxStore, config: AppConfig) {
     const type = request.body?.type;
     if (!isAliasType(type)) {
       throw new AppError(400, "INVALID_TRICK_TYPE", "type must be either dot or plus");
+    }
+    if (config.nodeEnv === "production" && !gmailRelayReady()) {
+      throw new AppError(503, "GMAIL_RELAY_NOT_READY", "Gmail relay is not ready to receive mail yet");
     }
 
     const mailbox = await createUniqueMailbox(store, config.gmailSourceEmail, type);

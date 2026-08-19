@@ -8,9 +8,11 @@ import { createStore } from "./store";
 export async function startApiServer() {
   const config = loadConfig();
   const store = createStore(config);
-  const app = createApp(store, config);
   const cleanup = new CleanupJob(store, config);
   const poller = hasGmailConfig(config) ? new GmailPoller(createGmailClient(config), store, config) : null;
+  const app = createApp(store, config, {
+    gmailRelayReady: () => poller?.isReady() ?? false,
+  });
   const server = app.listen(config.port, () => {
     console.info(`[INFO] API listening on port ${config.port}`);
     if (!poller) {

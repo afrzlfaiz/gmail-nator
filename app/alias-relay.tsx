@@ -1,20 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createMailbox as createMailboxApi, deleteMailboxMessage, fetchApiHealth, fetchMailboxMessages, type ApiMessage } from "./api";
+import { ApiError, createMailbox as createMailboxApi, deleteMailboxMessage, fetchApiHealth, fetchMailboxMessages, type ApiMessage } from "./api";
 import { Icon } from "./icons";
 
-const SOURCE_LOCAL = "ahmadrizal";
-const SOURCE_ADDRESS = `${SOURCE_LOCAL}@gmail.com`;
-const STORAGE_KEY = "alias-relay-prototype-v1";
+const STORAGE_KEY = "alias-relay-state-v2";
 const MAX_MESSAGES = 20;
-const DEFAULT_ADDRESS = `${SOURCE_LOCAL}+inbox7@gmail.com`;
 const DISPLAY_TIME_ZONE = "Asia/Jakarta";
-const PLACEHOLDER_HISTORY_ADDRESSES = new Set([
-  DEFAULT_ADDRESS,
-  "ah.mad.rizal@gmail.com",
-  "a.hmad.rizal@gmail.com",
-]);
 
 type AliasType = "dot" | "plus";
 type MessageTone = "blue" | "coral" | "yellow";
@@ -62,78 +54,10 @@ const MODE_COPY: Record<AliasType, string> = {
   plus: "Add a unique tag before @gmail.com. The larger alias space makes this the default.",
 };
 
-const SAMPLE_MESSAGES: Omit<Message, "id" | "recipient" | "receivedAt">[] = [
-  {
-    senderName: "Notion",
-    sender: "team@notion.so",
-    subject: "You are invited to a workspace",
-    snippet: "Your test workspace is waiting for you.",
-    body: "You have been invited to join a Notion workspace.\n\nOpen the invite link to get started. This sample message was added by the frontend prototype.",
-    tone: "blue",
-  },
-  {
-    senderName: "Stripe",
-    sender: "receipts@stripe.com",
-    subject: "Your test payment receipt",
-    snippet: "Here is the receipt for your latest test payment.",
-    body: "Thanks for testing with Stripe.\n\nThis is a sample receipt email so you can exercise the detail view without a backend connection.",
-    tone: "yellow",
-  },
-  {
-    senderName: "Example App",
-    sender: "hello@example.test",
-    subject: "Welcome to Example App",
-    snippet: "Your account has been created successfully.",
-    body: "Welcome.\n\nYour account is ready. This test message demonstrates how a new incoming email will be shown in the public mailbox.",
-    tone: "coral",
-  },
-];
-
 function createInitialState(): AppState {
   return {
     history: [],
-    mailboxes: {
-      [DEFAULT_ADDRESS]: {
-        type: "plus",
-        messages: [
-          {
-            id: "seed-github",
-            senderName: "GitHub",
-            sender: "noreply@github.com",
-            recipient: DEFAULT_ADDRESS,
-            subject: "Verify your email address",
-            snippet: "A quick click and your account is ready to go.",
-            body: "Hi there,\n\nThanks for signing up for GitHub. Confirm your email address to finish setting up your account.\n\nThis is a prototype message, but the mailbox flow is ready for a real API connection.\n\nThe Alias Relay team",
-            receivedAt: "2026-08-19T10:31:00+07:00",
-            tone: "blue",
-          },
-          {
-            id: "seed-discord",
-            senderName: "Discord",
-            sender: "noreply@discord.com",
-            recipient: DEFAULT_ADDRESS,
-            subject: "Your verification code is 482 901",
-            snippet: "Use this code to verify your new Discord account.",
-            body: "Your Discord verification code is:\n\n482 901\n\nThis code expires in 10 minutes. If you did not request this email, you can safely ignore it.",
-            receivedAt: "2026-08-19T10:26:00+07:00",
-            tone: "coral",
-          },
-          {
-            id: "seed-linear",
-            senderName: "Linear",
-            sender: "hello@linear.app",
-            recipient: DEFAULT_ADDRESS,
-            subject: "Welcome to your new workspace",
-            snippet: "Your issue tracker is ready when you are.",
-            body: "Welcome to Linear.\n\nYour workspace has been created and is ready for your first issue. Invite a teammate or jump straight into your next test flow.",
-            receivedAt: "2026-08-19T10:15:00+07:00",
-            tone: "yellow",
-          },
-        ],
-      },
-      "ah.mad.rizal@gmail.com": { type: "dot", messages: [] },
-      "a.hmad.rizal@gmail.com": { type: "dot", messages: [] },
-    },
+    mailboxes: {},
   };
 }
 
@@ -146,19 +70,12 @@ function isAppState(value: unknown): value is AppState {
   return Array.isArray(candidate.history) && typeof candidate.mailboxes === "object" && candidate.mailboxes !== null;
 }
 
-function removePlaceholderHistory(state: AppState): AppState {
-  return {
-    ...state,
-    history: state.history.filter((entry) => !PLACEHOLDER_HISTORY_ADDRESSES.has(entry.address)),
-  };
-}
-
 function loadStoredState(): AppState {
   const fallback = createInitialState();
 
   try {
     const saved = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null") as unknown;
-    return isAppState(saved) ? removePlaceholderHistory(saved) : fallback;
+    return isAppState(saved) ? saved : fallback;
   } catch {
     return fallback;
   }
@@ -170,46 +87,6 @@ function persistState(state: AppState) {
   } catch {
     // The current session remains usable when browser storage is unavailable.
   }
-}
-
-function randomTag(length = 6) {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let result = "";
-
-  for (let index = 0; index < length; index += 1) {
-    result += chars[Math.floor(Math.random() * chars.length)];
-  }
-
-  return result;
-}
-
-function generateAlias(type: AliasType, knownAddresses: Set<string>) {
-  if (type === "plus") {
-    let candidate = "";
-    do {
-      candidate = `${SOURCE_LOCAL}+${randomTag()}@gmail.com`;
-    } while (knownAddresses.has(candidate));
-    return candidate;
-  }
-
-  let candidate = "";
-  let attempts = 0;
-  do {
-    const forcedDotPosition = 1 + Math.floor(Math.random() * (SOURCE_LOCAL.length - 1));
-    let local = SOURCE_LOCAL[0];
-
-    for (let index = 1; index < SOURCE_LOCAL.length; index += 1) {
-      if (index === forcedDotPosition || Math.random() > 0.52) {
-        local += ".";
-      }
-      local += SOURCE_LOCAL[index];
-    }
-
-    candidate = `${local}@gmail.com`;
-    attempts += 1;
-  } while (knownAddresses.has(candidate) && attempts < 100);
-
-  return candidate;
 }
 
 function formatDate(value: string) {
@@ -293,21 +170,27 @@ export default function AliasRelay() {
   const [state, setState] = useState<AppState>(() => createInitialState());
   const [route, setRoute] = useState<Route>({ kind: "home" });
   const [selectedType, setSelectedType] = useState<AliasType>("plus");
-  const [currentAlias, setCurrentAlias] = useState(DEFAULT_ADDRESS);
+  const [currentAlias, setCurrentAlias] = useState("");
   const [currentAliasType, setCurrentAliasType] = useState<AliasType>("plus");
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
   const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
+  const [gmailRelayReady, setGmailRelayReady] = useState(false);
 
   useEffect(() => {
     const stored = loadStoredState();
     setState(stored);
-    setCurrentAlias(stored.history[0]?.address ?? DEFAULT_ADDRESS);
-    setSelectedType(stored.history[0]?.type ?? "plus");
-    setCurrentAliasType(stored.history[0]?.type ?? "plus");
+    const firstAlias = stored.history[0];
+    if (firstAlias) {
+      setCurrentAlias(firstAlias.address);
+      setSelectedType(firstAlias.type);
+      setCurrentAliasType(firstAlias.type);
+      setIsInitializing(false);
+    }
     setHasLoadedStorage(true);
 
     const updateRoute = () => {
@@ -335,6 +218,15 @@ export default function AliasRelay() {
 
     updateRoute();
     window.addEventListener("hashchange", updateRoute);
+
+    const rawHash = window.location.hash.slice(1);
+    const opensMailbox = rawHash.includes("@") || rawHash.includes("%40");
+    if (!firstAlias && !opensMailbox) {
+      void generateNewAlias();
+    } else if (!firstAlias) {
+      setIsInitializing(false);
+    }
+
     return () => window.removeEventListener("hashchange", updateRoute);
   }, []);
 
@@ -342,13 +234,15 @@ export default function AliasRelay() {
     let cancelled = false;
     const checkApi = async () => {
       try {
-        await fetchApiHealth();
+        const health = await fetchApiHealth();
         if (!cancelled) {
           setApiStatus("connected");
+          setGmailRelayReady(health.gmailRelayReady);
         }
       } catch {
         if (!cancelled) {
           setApiStatus("offline");
+          setGmailRelayReady(false);
         }
       }
     };
@@ -409,7 +303,7 @@ export default function AliasRelay() {
           };
         });
       } catch {
-        // Keep the local prototype mailbox when the API is not running yet.
+        // Keep the last successful server snapshot during a temporary API failure.
       }
     };
 
@@ -464,23 +358,28 @@ export default function AliasRelay() {
     }
   }
 
-  async function generateNewAlias() {
+  async function generateNewAlias(retryCount = 0) {
     setIsGenerating(true);
+    let retryScheduled = false;
     try {
       const mailbox = await createMailboxApi(selectedType);
       rememberAlias(mailbox.address, mailbox.type);
       setCurrentAlias(mailbox.address);
       setCurrentAliasType(mailbox.type);
       showToast("New alias generated");
-    } catch {
-      const knownAddresses = new Set(state.history.map((entry) => entry.address));
-      const address = generateAlias(selectedType, knownAddresses);
-      rememberAlias(address, selectedType);
-      setCurrentAlias(address);
-      setCurrentAliasType(selectedType);
-      showToast("Backend unavailable; local alias generated");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 503 && retryCount < 10) {
+        retryScheduled = true;
+        showToast("Waiting for Gmail relay...");
+        window.setTimeout(() => void generateNewAlias(retryCount + 1), 2000);
+      } else {
+        showToast("Could not create a server mailbox");
+      }
     } finally {
       setIsGenerating(false);
+      if (!retryScheduled) {
+        setIsInitializing(false);
+      }
     }
   }
 
@@ -492,33 +391,6 @@ export default function AliasRelay() {
     showToast("Browser history cleared");
   }
 
-  function simulateIncomingMessage() {
-    if (route.kind !== "mailbox") {
-      return;
-    }
-
-    const currentMailbox = mailbox ?? { type: "plus" as AliasType, messages: [] };
-    const sample = SAMPLE_MESSAGES[currentMailbox.messages.length % SAMPLE_MESSAGES.length];
-    const newMessage: Message = {
-      ...sample,
-      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      recipient: route.address,
-      receivedAt: new Date().toISOString(),
-    };
-    const nextMailbox: Mailbox = {
-      ...currentMailbox,
-      messages: [newMessage, ...currentMailbox.messages].slice(0, MAX_MESSAGES),
-    };
-    const nextState: AppState = {
-      ...state,
-      mailboxes: { ...state.mailboxes, [route.address]: nextMailbox },
-    };
-
-    setState(nextState);
-    setSelectedMessageId(newMessage.id);
-    showToast("Test email added to the inbox");
-  }
-
   async function deleteMessage(messageId: string) {
     if (route.kind !== "mailbox" || !mailbox) {
       return;
@@ -527,7 +399,8 @@ export default function AliasRelay() {
     try {
       await deleteMailboxMessage(messageId);
     } catch {
-      // Keep the local delete behavior when this message only exists in prototype state.
+      showToast("Could not delete message");
+      return;
     }
 
     const nextMessages = mailbox.messages.filter((message) => message.id !== messageId);
@@ -566,8 +439,8 @@ export default function AliasRelay() {
         </div>
 
         <div className="source-status">
-          <span className="status-dot" aria-hidden="true" />
-          <span>Gmail source connected</span>
+          <span className={`status-dot ${gmailRelayReady ? "is-ready" : apiStatus === "offline" ? "is-offline" : "is-checking"}`} aria-hidden="true" />
+          <span>{gmailRelayReady ? "Gmail relay ready" : apiStatus === "offline" ? "Gmail relay unavailable" : "Checking Gmail relay"}</span>
         </div>
 
         <nav className="sidebar-nav">
@@ -622,7 +495,7 @@ export default function AliasRelay() {
           <div className="topbar-right">
             <span className={`live-label is-${apiStatus}`}>
               <span className="status-dot" aria-hidden="true" />
-              {apiStatus === "connected" ? "API connected" : apiStatus === "offline" ? "Prototype fallback" : "Connecting API"}
+              {apiStatus === "offline" ? "API unavailable" : apiStatus === "connected" && gmailRelayReady ? "Gmail relay ready" : apiStatus === "connected" ? "Waiting for Gmail relay" : "Connecting API"}
             </span>
           </div>
         </header>
@@ -635,7 +508,7 @@ export default function AliasRelay() {
                 <h1 id="home-title">
                   A clean inbox for your next <em>test.</em>
                 </h1>
-                <p>Spin up a disposable Gmail address without creating another account. Send your test email, then watch it land here.</p>
+                <p>Spin up a disposable Gmail address without creating another account. Send an email to it, then watch it land here.</p>
                 <div className="hero-details" aria-label="Product features">
                   <span>No login</span>
                   <span>Open in seconds</span>
@@ -646,7 +519,7 @@ export default function AliasRelay() {
               <section className="generator-panel" aria-labelledby="generator-title">
                 <div className="panel-heading">
                   <span className="panel-label" id="generator-title">01 / Create an alias</span>
-                  <span className="source-label">routes to {SOURCE_ADDRESS}</span>
+                  <span className="source-label">{gmailRelayReady ? "Gmail relay active" : "Server relay required"}</span>
                 </div>
 
                 <div className="generator-form">
@@ -670,10 +543,11 @@ export default function AliasRelay() {
                   <div className="address-preview">
                     <span className="preview-label">Your temporary address</span>
                     <div className="address-line">
-                      <code className="address-value">{currentAlias}</code>
+                      <code className="address-value">{currentAlias || (isInitializing ? "Creating mailbox..." : "No mailbox yet")}</code>
                       <button
                         className="icon-button"
                         type="button"
+                        disabled={!currentAlias}
                         aria-label="Copy generated address"
                         title="Copy address"
                         onClick={() => void copyText(currentAlias).then(() => showToast("Alias address copied"))}
@@ -684,16 +558,16 @@ export default function AliasRelay() {
                     <div className="preview-meta">
                       <span className={`type-badge ${currentAliasType === "dot" ? "dot" : ""}`}>{TYPE_LABELS[currentAliasType]}</span>
                       <span className="meta-separator" aria-hidden="true" />
-                      <span>ready to receive</span>
+                      <span>{currentAlias ? "registered on server" : "waiting for relay"}</span>
                     </div>
-                    <button className="mailbox-cta" type="button" onClick={() => openMailbox(currentAlias, currentAliasType)}>
+                    <button className="mailbox-cta" type="button" disabled={!currentAlias} onClick={() => openMailbox(currentAlias, currentAliasType)}>
                       <span>Go to mailbox</span>
                       <Icon name="arrow" />
                     </button>
                   </div>
 
-                  <button className="primary-button" type="button" disabled={isGenerating} onClick={generateNewAlias}>
-                    <span>{isGenerating ? "Making your alias..." : "Generate new alias"}</span>
+                  <button className="primary-button" type="button" disabled={isInitializing || isGenerating} onClick={() => void generateNewAlias()}>
+                    <span>{isInitializing || isGenerating ? "Creating mailbox..." : "Generate new alias"}</span>
                     <span className="button-arrow" aria-hidden="true">&gt;</span>
                   </button>
                   <p className="panel-footnote">No Gmail account is created. Alias addresses share one source inbox.</p>
@@ -776,10 +650,6 @@ export default function AliasRelay() {
                 <span className="polling-label">
                   <span className="status-dot" aria-hidden="true" /> Refreshes every 5 sec{lastSyncedAt ? ` / ${formatTime(lastSyncedAt)}` : ""}
                 </span>
-                <button className="secondary-button is-accent" type="button" onClick={simulateIncomingMessage}>
-                  <Icon name="plus" />
-                  <span>Simulate email</span>
-                </button>
               </div>
             </div>
 
@@ -809,7 +679,6 @@ export default function AliasRelay() {
                     <span className="empty-inbox-mark">@</span>
                     <h3>Your inbox is listening.</h3>
                     <p>Send an email to this address. New messages will appear here after the next poll.</p>
-                    <button className="secondary-button" type="button" onClick={simulateIncomingMessage}>Add a test email</button>
                   </div>
                 )}
               </div>
@@ -837,7 +706,7 @@ export default function AliasRelay() {
                     <p className="recipient-line">to <strong>{selectedMessage.recipient || route.address}</strong></p>
                     <div className="detail-body">{selectedMessage.body || selectedMessage.snippet || "No message body available."}</div>
                     <div className="detail-footer">
-                      <span className="detail-retention">Stored locally for prototype.<br />Production retention: 7 days.</span>
+                      <span className="detail-retention">Messages are retained for 7 days.<br />The inbox stores up to 20 messages.</span>
                       <button className="delete-button" type="button" onClick={() => deleteMessage(selectedMessage.id)}>Delete message</button>
                     </div>
                   </div>

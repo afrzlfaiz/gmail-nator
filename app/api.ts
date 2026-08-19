@@ -30,7 +30,15 @@ export type ApiHealth = {
   status: "ok";
   storage: "memory" | "postgres";
   gmailPollingConfigured: boolean;
+  gmailRelayReady: boolean;
 };
+
+export class ApiError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -50,7 +58,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // Keep the status-based error when the response is not JSON.
     }
-    throw new Error(message);
+    throw new ApiError(response.status, message);
   }
 
   if (response.status === 204) {
