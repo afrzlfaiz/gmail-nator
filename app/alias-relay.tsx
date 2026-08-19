@@ -363,7 +363,6 @@ export default function AliasRelay() {
     let retryScheduled = false;
     try {
       const mailbox = await createMailboxApi(selectedType);
-      rememberAlias(mailbox.address, mailbox.type);
       setCurrentAlias(mailbox.address);
       setCurrentAliasType(mailbox.type);
       showToast("New alias generated");
@@ -570,7 +569,7 @@ export default function AliasRelay() {
                     <span>{isInitializing || isGenerating ? "Creating mailbox..." : "Generate new alias"}</span>
                     <span className="button-arrow" aria-hidden="true">&gt;</span>
                   </button>
-                  <p className="panel-footnote">No Gmail account is created. Alias addresses share one source inbox.</p>
+                  <p className="panel-footnote">Click Go to mailbox to save the address to your history.</p>
                 </div>
               </section>
             </div>
