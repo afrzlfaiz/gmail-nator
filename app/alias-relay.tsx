@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import DOMPurify from "isomorphic-dompurify";
 import { ApiError, createMailbox as createMailboxApi, deleteMailboxMessage, fetchApiHealth, fetchMailboxMessages, type ApiMessage } from "./api";
 import { Icon } from "./icons";
 
@@ -30,6 +31,7 @@ type Message = {
   subject: string;
   snippet: string;
   body: string;
+  bodyHtml: string | null;
   receivedAt: string;
   tone: MessageTone;
 };
@@ -187,6 +189,7 @@ function apiMessageToMessage(message: ApiMessage): Message {
     subject,
     snippet: message.snippet ?? body.slice(0, 140),
     body,
+    bodyHtml: message.body_html,
     receivedAt: message.received_at ?? message.created_at,
     tone: messageTone(sender),
   };
@@ -744,7 +747,14 @@ export default function AliasRelay() {
                       </button>
                     </div>
                     <p className="recipient-line">to <strong>{selectedMessage.recipient || route.address}</strong></p>
-                    <div className="detail-body">{selectedMessage.body || selectedMessage.snippet || "No message body available."}</div>
+                    {selectedMessage.bodyHtml ? (
+                      <div
+                        className="detail-body html"
+                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedMessage.bodyHtml) }}
+                      />
+                    ) : (
+                      <div className="detail-body">{selectedMessage.body || selectedMessage.snippet || "No message body available."}</div>
+                    )}
                     <div className="detail-footer">
                       <span className="detail-retention">Messages are retained for 7 days.<br />The inbox stores up to 20 messages.</span>
                       <button className="delete-button" type="button" onClick={() => deleteMessage(selectedMessage.id)}>Delete message</button>
