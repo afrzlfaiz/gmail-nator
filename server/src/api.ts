@@ -1,8 +1,16 @@
 import { Router, type Request } from "express";
 import rateLimit from "express-rate-limit";
-import { createUniqueMailbox, isAliasType, isGmailAddress, isSourceAlias, normalizeAddress } from "./alias";
+import {
+  createUniqueMailbox,
+  isAliasType,
+  isCustomAlias,
+  isMailboxAddress,
+  isSourceAlias,
+  normalizeAddress,
+} from "./alias";
 import { AppError, ConflictError, NotFoundError } from "./errors";
 import type { AppConfig } from "./config";
+import type { GmailSourceManager } from "./gmail/source-manager";
 import type { MailboxStore, Message } from "./types";
 
 function routeAddress(request: Request) {
@@ -19,8 +27,8 @@ function routeAddress(request: Request) {
   }
 
   address = normalizeAddress(address);
-  if (!isGmailAddress(address)) {
-    throw new AppError(400, "INVALID_ADDRESS", "Mailbox address must be a valid Gmail address");
+  if (!isMailboxAddress(address)) {
+    throw new AppError(400, "INVALID_ADDRESS", "Mailbox address is not valid");
   }
   return address;
 }
@@ -40,7 +48,11 @@ function messageResponse(message: Message) {
   };
 }
 
-export function createApiRouter(store: MailboxStore, config: AppConfig, gmailRelayReady: () => boolean) {
+function sourceReady(sourceManager: GmailSourceManager, sourceId: string) {
+  return sourceManager.listHealth().then((sources) => sources.some((source) => source.id === sourceId && source.ready));
+}
+
+export function createApiRouter(store: MailboxStore, config: AppConfig, sourceManager: GmailSourceManager) {
   const router = Router();
   const generateLimiter = rateLimit({
     windowMs: 60_000,
@@ -59,25 +71,46 @@ export function createApiRouter(store: MailboxStore, config: AppConfig, gmailRel
   router.post("/mailboxes", generateLimiter, async (request, response) => {
     const type = request.body?.type;
     if (!isAliasType(type)) {
-      throw new AppError(400, "INVALID_TRICK_TYPE", "type must be either dot or plus");
+      throw new AppError(400, "INVALID_TRICK_TYPE", "type must be dot, plus, mixed, or custom");
     }
-    if (config.nodeEnv === "production" && !gmailRelayReady()) {
-      throw new AppError(503, "GMAIL_RELAY_NOT_READY", "Gmail relay is not ready to receive mail yet");
+    if (config.nodeEnv === "production" && !sourceManager.isReady()) {
+      throw new AppError(503, "GMAIL_RELAY_NOT_READY", "No Gmail source is ready to receive mail yet");
     }
 
     const requestedAddress = typeof request.body?.address === "string" ? request.body.address.trim() : "";
+    let source = null as Awaited<ReturnType<MailboxStore["getGmailSource"]>>;
+    let customDomain = null as Awaited<ReturnType<MailboxStore["getCustomDomain"]>>;
     let mailbox;
 
     if (requestedAddress) {
       const address = normalizeAddress(requestedAddress);
-      if (!isSourceAlias(address, config.gmailSourceEmail)) {
-        throw new AppError(400, "INVALID_ADDRESS", "Address is not a valid alias of the source Gmail account");
+      if (!isMailboxAddress(address)) {
+        throw new AppError(400, "INVALID_ADDRESS", "Mailbox address is not valid");
+      }
+
+      if (type === "custom") {
+        const domainName = address.slice(address.lastIndexOf("@") + 1);
+        customDomain = (await store.listCustomDomains()).find((entry) => entry.domain === domainName && entry.enabled) ?? null;
+        if (!customDomain || !isCustomAlias(address, customDomain.domain)) {
+          throw new AppError(400, "INVALID_ADDRESS", "Address is not registered under an active custom domain");
+        }
+        source = await store.getGmailSource(customDomain.sourceId);
+      } else {
+        const sources = await store.listGmailSources();
+        source = sources.find((entry) => entry.status === "active" && isSourceAlias(address, entry.email, type)) ?? null;
+      }
+
+      if (!source) {
+        throw new AppError(400, "INVALID_ADDRESS", "Address is not a valid alias of an active Gmail source");
+      }
+      if (!(await sourceReady(sourceManager, source.id))) {
+        throw new AppError(503, "GMAIL_RELAY_NOT_READY", "The selected Gmail source is not ready");
       }
       if (await store.findMailboxByAddress(address)) {
         throw new ConflictError("Mailbox address is already registered");
       }
       try {
-        mailbox = await store.createMailbox(address, type);
+        mailbox = await store.createMailbox(address, type, source.id, customDomain?.id ?? null);
       } catch (error) {
         if (error instanceof ConflictError) {
           throw new ConflictError("Mailbox address is already registered");
@@ -85,13 +118,33 @@ export function createApiRouter(store: MailboxStore, config: AppConfig, gmailRel
         throw error;
       }
     } else {
-      mailbox = await createUniqueMailbox(store, config.gmailSourceEmail, type);
+      if (type === "custom") {
+        const selected = await sourceManager.pickRandomCustomDomain();
+        if (!selected) {
+          throw new AppError(503, "CUSTOM_DOMAIN_NOT_READY", "No custom domain is ready to receive mail yet");
+        }
+        source = selected.source;
+        customDomain = selected.domain;
+      } else {
+        source = await sourceManager.pickRandomSource();
+        if (!source) {
+          throw new AppError(503, "GMAIL_RELAY_NOT_READY", "No Gmail source is ready to receive mail yet");
+        }
+      }
+      mailbox = await createUniqueMailbox(
+        store,
+        source.email,
+        type,
+        source.id,
+        customDomain?.domain,
+        customDomain?.id ?? null,
+      );
     }
 
     response.status(201).json({
       address: mailbox.address,
       type: mailbox.type,
-      url: `/mailbox/#${mailbox.address}`,
+      url: `/mailbox/#${encodeURIComponent(mailbox.address)}`,
     });
   });
 

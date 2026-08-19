@@ -11,7 +11,7 @@ npm run dev:all
 ```
 
 The frontend runs on `http://localhost:3000`, while Next.js proxies `/api/*` to the Express service on `http://localhost:4000`.
-Without `DATABASE_URL`, the API uses in-memory storage for local development. Without Gmail OAuth credentials, Gmail polling stays disabled.
+Without `DATABASE_URL`, the API uses in-memory storage for local development only. Production requires PostgreSQL because admin credentials, Gmail sources, encrypted refresh tokens, domains, and sessions are database-backed.
 
 To run the services separately, use `npm run backend:dev` and `npm run dev` in two terminals.
 
@@ -19,7 +19,7 @@ For separate deployed services, set `BACKEND_URL` while building the frontend. `
 
 ## Supabase Session Pooler
 
-Run `supabase/migrations/001_initial_schema.sql` in the Supabase SQL editor, then set only the session pooler URI:
+Run `supabase/migrations/001_initial_schema.sql` and then `supabase/migrations/002_admin_sources_domains.sql` in the Supabase SQL editor, then set only the session pooler URI:
 
 ```env
 DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
@@ -38,7 +38,7 @@ Build command: npm ci && npm run build:all
 Start command: npm run backend:start
 ```
 
-Set `DATABASE_URL`, Gmail variables, and `CORS_ORIGIN` in the Render environment settings. Leave `BACKEND_URL` and `NEXT_PUBLIC_API_URL` empty for this single-service setup. If the frontend is deployed as a separate service, set `BACKEND_URL` to the public API service URL while building the Next.js app.
+Set `DATABASE_URL`, Google OAuth application credentials, `GMAIL_TOKEN_ENCRYPTION_KEY`, `ADMIN_PASSWORD_HASH`, and `CORS_ORIGIN` in the Render environment settings. Leave `BACKEND_URL` and `NEXT_PUBLIC_API_URL` empty for this single-service setup. If the frontend is deployed as a separate service, set `BACKEND_URL` and `ADMIN_APP_URL` accordingly.
 
 `render.yaml` contains the matching Render Blueprint configuration.
 
@@ -63,19 +63,28 @@ The publish workflow also triggers a Render deploy when the `RENDER_DEPLOY_HOOK`
 
 A `.dockerignore` keeps the Docker build context clean (no `node_modules`, `.next`, `dist-server`, or `.env`).
 
-## Gmail Worker
+## Admin And Gmail Sources
 
-Set all Gmail variables in `.env` to enable the incremental History API poller:
+Open `http://localhost:3000/admin` and sign in with the configured bootstrap password. Set the Google OAuth application credentials and callback URI first:
 
 ```env
 GMAIL_CLIENT_ID=
 GMAIL_CLIENT_SECRET=
 GMAIL_REDIRECT_URI=http://localhost:4000/oauth2/callback
-GMAIL_REFRESH_TOKEN=
-GMAIL_SOURCE_EMAIL=ahmadrizal@gmail.com
+GMAIL_TOKEN_ENCRYPTION_KEY=
+ADMIN_PASSWORD_HASH=
+ADMIN_APP_URL=http://localhost:3000
 ```
 
-The backend stores the Gmail `historyId` checkpoint in `app_state`, reads recipient headers, stores parsed bodies, trims each mailbox to 20 messages, and removes messages older than 7 days.
+Add each `@gmail.com` source in the admin panel and use **Connect OAuth**, or paste an existing refresh token into the optional token field. The refresh token is encrypted before it is stored in PostgreSQL. `ADMIN_INITIAL_PASSWORD` may be used once instead of `ADMIN_PASSWORD_HASH`; remove it after the first successful login.
+
+The public generator randomly selects an active, ready Gmail source for dot, plus, and mixed aliases. Mixed aliases use a format such as `a.b+c123@gmail.com`.
+
+## Custom Domains
+
+Add a custom domain in the admin panel and select its Gmail destination. Configure Cloudflare Email Routing manually with a verified destination and catch-all forwarding rule. The public generator randomly selects an enabled custom domain and creates an address such as `tag123456@your-domain.com`.
+
+The forwarded Gmail message must preserve the original recipient in a recipient header. The parser checks `X-Original-Recipient`, `Delivered-To`, `X-Original-To`, `Envelope-To`, `To`, and `Cc`.
 
 ## Verification
 
@@ -88,7 +97,7 @@ npm run backend:build
 Useful endpoints:
 
 - `GET /api/health`
-- `POST /api/mailboxes` with `{ "type": "plus" }`
+- `POST /api/mailboxes` with `{ "type": "plus" }`, `{ "type": "mixed" }`, or `{ "type": "custom" }`
 - `GET /api/mailboxes/:address/messages`
 - `GET /api/messages/:id`
 - `DELETE /api/messages/:id`

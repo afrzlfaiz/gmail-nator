@@ -1,20 +1,20 @@
 import express from "express";
 import next from "next";
 import { createApp } from "./app";
-import { hasGmailConfig, loadConfig } from "./config";
+import { loadConfig } from "./config";
 import { CleanupJob } from "./cleanup";
-import { createGmailClient } from "./gmail/client";
-import { GmailPoller } from "./gmail/poller";
+import { GmailSourceManager } from "./gmail/source-manager";
 import { createStore } from "./store";
 
 async function startIntegratedServer() {
   const config = loadConfig();
   const store = createStore(config);
   const cleanup = new CleanupJob(store, config);
-  const poller = hasGmailConfig(config) ? new GmailPoller(createGmailClient(config), store, config) : null;
+  const sourceManager = new GmailSourceManager(store, config);
+  await sourceManager.start();
   const apiApp = createApp(store, config, {
     includeNotFound: false,
-    gmailRelayReady: () => poller?.isReady() ?? false,
+    sourceManager,
   });
   const nextApp = next({
     dev: false,
@@ -32,20 +32,14 @@ async function startIntegratedServer() {
 
   const server = app.listen(config.port, () => {
     console.info(`[INFO] Render web service listening on port ${config.port}`);
-    if (!poller) {
-      console.warn("[WARN] Gmail polling disabled; OAuth environment variables are incomplete");
-    }
   });
 
   cleanup.start();
-  if (poller) {
-    void poller.start();
-  }
 
   const shutdown = (signal: string) => {
     console.info(`[INFO] ${signal} received; shutting down`);
     cleanup.stop();
-    poller?.stop();
+    sourceManager.stop();
     void nextApp.close();
     server.close((error) => {
       void store.close().finally(() => {

@@ -1749,3 +1749,276 @@ svg {
     transition-duration: 0.01ms !important;
   }
 }
+
+.admin-page {
+  min-height: 100vh;
+  padding: 48px 24px;
+  background: #f4f1ea;
+  color: #1c2421;
+}
+
+.admin-shell {
+  width: min(1080px, 100%);
+  margin: 0 auto;
+}
+
+.admin-header,
+.admin-section-heading,
+.admin-list-row,
+.admin-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.admin-header {
+  align-items: flex-start;
+  margin-bottom: 28px;
+}
+
+.admin-header h1,
+.admin-card h1,
+.admin-card h2 {
+  margin: 4px 0 8px;
+  letter-spacing: -0.04em;
+}
+
+.admin-header h1 {
+  font-size: clamp(2.5rem, 6vw, 4.8rem);
+  line-height: 0.95;
+}
+
+.admin-card h2 {
+  font-size: 1.6rem;
+}
+
+.admin-header p,
+.admin-card p {
+  max-width: 680px;
+  margin: 0;
+  color: #65706b;
+  line-height: 1.6;
+}
+
+.admin-kicker {
+  display: block;
+  color: #b96848;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.admin-card {
+  margin-bottom: 20px;
+  padding: 28px;
+  border: 1px solid #d8d6cd;
+  border-radius: 18px;
+  background: #fffdf8;
+  box-shadow: 0 18px 50px rgba(37, 44, 39, 0.06);
+}
+
+.admin-login-card {
+  width: min(460px, 100%);
+  margin: 12vh auto 0;
+}
+
+.admin-count {
+  min-width: 36px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #e9efe8;
+  color: #446050;
+  font-weight: 800;
+  text-align: center;
+}
+
+.admin-form,
+.admin-inline-form {
+  display: flex;
+  gap: 10px;
+}
+
+.admin-form {
+  flex-direction: column;
+  margin-top: 28px;
+}
+
+.admin-form label {
+  color: #65706b;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.admin-form input,
+.admin-inline-form input,
+.admin-inline-form select {
+  min-width: 0;
+  flex: 1;
+  padding: 12px 14px;
+  border: 1px solid #cacbc2;
+  border-radius: 9px;
+  background: #fff;
+  color: #1c2421;
+  font: inherit;
+}
+
+.admin-primary-button,
+.admin-secondary-button,
+.admin-text-button {
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.admin-primary-button,
+.admin-secondary-button {
+  padding: 12px 16px;
+}
+
+.admin-primary-button {
+  background: #1f3b2c;
+  color: #fffdf8;
+}
+
+.admin-secondary-button {
+  border: 1px solid #c6cbc1;
+  background: transparent;
+  color: #385545;
+}
+
+.admin-text-button {
+  padding: 6px 0;
+  background: transparent;
+  color: #b96848;
+}
+
+.admin-primary-button:disabled,
+.admin-secondary-button:disabled,
+.admin-text-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.admin-list {
+  margin-top: 20px;
+  border-top: 1px solid #e0ded5;
+}
+
+.admin-list-row {
+  align-items: flex-start;
+  padding: 18px 0;
+  border-bottom: 1px solid #e0ded5;
+}
+
+.admin-list-row > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.admin-list-row strong {
+  color: #26372e;
+}
+
+.admin-list-row span,
+.admin-list-row small {
+  color: #737d77;
+  font-size: 0.82rem;
+}
+
+.admin-status {
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #e9efe8;
+  color: #446050 !important;
+  font-size: 0.68rem !important;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.status-pending,
+.status-error,
+.status-reauth_required {
+  background: #f8e8dc;
+  color: #a24f35 !important;
+}
+
+.status-disabled {
+  background: #ecebe5;
+  color: #737d77 !important;
+}
+
+.admin-error-text,
+.admin-error {
+  color: #a24f35 !important;
+}
+
+.admin-alert {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border-radius: 9px;
+  background: #f8e8dc;
+}
+
+.admin-notice {
+  background: #e9efe8;
+  color: #446050;
+}
+
+.admin-help {
+  margin: 0 0 18px !important;
+}
+
+.admin-instructions {
+  display: grid;
+  gap: 7px;
+  margin-top: 22px;
+  padding: 16px;
+  border-left: 3px solid #b96848;
+  background: #f8f2e8;
+  color: #65706b;
+  font-size: 0.86rem;
+}
+
+.admin-instructions strong {
+  color: #26372e;
+}
+
+.admin-empty {
+  padding: 18px 0;
+  color: #737d77;
+}
+
+@media (max-width: 700px) {
+  .admin-page {
+    padding: 24px 14px;
+  }
+
+  .admin-card {
+    padding: 20px;
+  }
+
+  .admin-header,
+  .admin-list-row,
+  .admin-inline-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-header .admin-secondary-button,
+  .admin-inline-form button,
+  .admin-row-actions {
+    width: 100%;
+  }
+
+  .admin-row-actions {
+    align-items: flex-start;
+  }
+}

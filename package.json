@@ -12,6 +12,7 @@
     "build:all": "npm run build && npm run backend:build",
     "dev:all": "concurrently --kill-others-on-fail --names frontend,backend --prefix-colors blue,green \"npm run dev\" \"npm run backend:dev\"",
     "start": "next start",
+    "test": "tsx --test server/src/alias.test.ts server/src/security.test.ts",
     "typecheck": "tsc --noEmit && npm run backend:typecheck"
   },
   "dependencies": {

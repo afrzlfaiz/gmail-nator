@@ -4,12 +4,12 @@ import { useEffect, useState } from "react";
 import DOMPurify from "isomorphic-dompurify";
 import { ApiError, createMailbox as createMailboxApi, deleteMailboxMessage, fetchApiHealth, fetchMailboxMessages, type ApiMessage } from "./api";
 import { Icon } from "./icons";
+import type { AliasType } from "./alias-relay-types";
 
 const STORAGE_KEY = "alias-relay-state-v2";
 const MAX_MESSAGES = 20;
 const DISPLAY_TIME_ZONE = "Asia/Jakarta";
 
-type AliasType = "dot" | "plus";
 type MessageTone = "blue" | "coral" | "yellow";
 type Route =
   | { kind: "home" }
@@ -49,37 +49,29 @@ type AppState = {
 const TYPE_LABELS: Record<AliasType, string> = {
   dot: "DOT TRICK",
   plus: "PLUS TRICK",
+  mixed: "MIXED TRICK",
+  custom: "CUSTOM DOMAIN",
 };
 
 const MODE_COPY: Record<AliasType, string> = {
   dot: "Place dots between letters in the local part. Gmail routes every variation to the same source inbox.",
   plus: "Add a unique tag before @gmail.com. The larger alias space makes this the default.",
+  mixed: "Combine dots and a plus tag in one address for a larger set of Gmail variations.",
+  custom: "Use a random address on a configured custom domain forwarded to a Gmail source.",
 };
 
-function randomTag(length = 6) {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let result = "";
-  for (let index = 0; index < length; index += 1) {
-    result += chars[Math.floor(Math.random() * chars.length)];
+function aliasTypeForAddress(address: string): AliasType {
+  const normalized = address.trim().toLowerCase();
+  const atIndex = normalized.lastIndexOf("@");
+  const localPart = atIndex >= 0 ? normalized.slice(0, atIndex) : normalized;
+  const domain = atIndex >= 0 ? normalized.slice(atIndex + 1) : "";
+  if (domain !== "gmail.com") {
+    return "custom";
   }
-  return result;
-}
-
-function generateAlias(type: AliasType, localPart: string) {
-  if (type === "plus") {
-    return `${localPart}+${randomTag()}@gmail.com`;
+  if (localPart.includes("+") && localPart.split("+")[0]?.includes(".")) {
+    return "mixed";
   }
-
-  const local = localPart.replaceAll(".", "").split("+")[0];
-  const forcedDotPosition = 1 + Math.floor(Math.random() * (local.length - 1));
-  let result = local[0];
-  for (let index = 1; index < local.length; index += 1) {
-    if (index === forcedDotPosition || Math.random() > 0.52) {
-      result += ".";
-    }
-    result += local[index];
-  }
-  return `${result}@gmail.com`;
+  return localPart.includes("+") ? "plus" : "dot";
 }
 
 function createInitialState(): AppState {
@@ -201,6 +193,7 @@ export default function AliasRelay() {
   const [selectedType, setSelectedType] = useState<AliasType>("plus");
   const [currentAlias, setCurrentAlias] = useState("");
   const [currentAliasType, setCurrentAliasType] = useState<AliasType>("plus");
+  const [currentAliasRegistered, setCurrentAliasRegistered] = useState(false);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [mailboxSyncNonce, setMailboxSyncNonce] = useState(0);
@@ -209,7 +202,8 @@ export default function AliasRelay() {
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
   const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
   const [gmailRelayReady, setGmailRelayReady] = useState(false);
-  const [sourceLocal, setSourceLocal] = useState<string | null>(null);
+  const [sourceCount, setSourceCount] = useState(0);
+  const [customDomainCount, setCustomDomainCount] = useState(0);
 
   useEffect(() => {
     const stored = loadStoredState();
@@ -219,6 +213,7 @@ export default function AliasRelay() {
       setCurrentAlias(firstAlias.address);
       setSelectedType(firstAlias.type);
       setCurrentAliasType(firstAlias.type);
+      setCurrentAliasRegistered(true);
     }
     setHasLoadedStorage(true);
 
@@ -251,19 +246,6 @@ export default function AliasRelay() {
   }, []);
 
   useEffect(() => {
-    if (!sourceLocal || state.history.length || route.kind === "mailbox") {
-      return;
-    }
-
-    const rawHash = window.location.hash.slice(1);
-    if (rawHash.includes("@") || rawHash.includes("%40")) {
-      return;
-    }
-
-    generateNewAlias();
-  }, [sourceLocal]);
-
-  useEffect(() => {
     let cancelled = false;
     const checkApi = async () => {
       try {
@@ -271,7 +253,8 @@ export default function AliasRelay() {
         if (!cancelled) {
           setApiStatus("connected");
           setGmailRelayReady(health.gmailRelayReady);
-          setSourceLocal(health.sourceLocalPart);
+          setSourceCount(health.gmailSourceCount);
+          setCustomDomainCount(health.customDomainCount);
         }
       } catch {
         if (!cancelled) {
@@ -316,7 +299,7 @@ export default function AliasRelay() {
     }
 
     let cancelled = false;
-    const type: AliasType = route.address.includes("+") ? "plus" : "dot";
+    const type = aliasTypeForAddress(route.address);
     const ensureMailbox = async () => {
       try {
         const mailbox = await createMailboxApi(type, route.address);
@@ -432,6 +415,9 @@ export default function AliasRelay() {
     try {
       const mailbox = await createMailboxApi(type, address);
       rememberAlias(mailbox.address, mailbox.type);
+      setCurrentAlias(mailbox.address);
+      setCurrentAliasType(mailbox.type);
+      setCurrentAliasRegistered(true);
       setSelectedMessageId(null);
       setRoute({ kind: "mailbox", address: mailbox.address });
       window.location.hash = mailbox.address;
@@ -455,14 +441,24 @@ export default function AliasRelay() {
     }
   }
 
-  function generateNewAlias() {
-    if (!sourceLocal) {
-      return;
+  async function generateNewAlias() {
+    setIsSaving(true);
+    try {
+      const mailbox = await createMailboxApi(selectedType);
+      setCurrentAlias(mailbox.address);
+      setCurrentAliasType(mailbox.type);
+      setCurrentAliasRegistered(true);
+      rememberAlias(mailbox.address, mailbox.type);
+      showToast("Alias generated and registered");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 503) {
+        showToast(selectedType === "custom" ? "No custom domain is ready yet" : "No Gmail source is ready yet");
+      } else {
+        showToast("Could not generate the mailbox");
+      }
+    } finally {
+      setIsSaving(false);
     }
-    const address = generateAlias(selectedType, sourceLocal);
-    setCurrentAlias(address);
-    setCurrentAliasType(selectedType);
-    showToast("Alias generated locally");
   }
 
   function clearHistory() {
@@ -517,12 +513,12 @@ export default function AliasRelay() {
 
         <div className="sidebar-intro">
           <span className="sidebar-kicker">Temporary mail / 01</span>
-          <h2>One Gmail. A fresh address for every test.</h2>
+          <h2>Multiple sources. A fresh address for every test.</h2>
         </div>
 
         <div className="source-status">
           <span className={`status-dot ${gmailRelayReady ? "is-ready" : apiStatus === "offline" ? "is-offline" : "is-checking"}`} aria-hidden="true" />
-          <span>{gmailRelayReady ? "Gmail relay ready" : apiStatus === "offline" ? "Gmail relay unavailable" : "Checking Gmail relay"}</span>
+          <span>{gmailRelayReady ? `Gmail relay ready / ${sourceCount} source${sourceCount === 1 ? "" : "s"}` : apiStatus === "offline" ? "Gmail relay unavailable" : "Checking Gmail relay"}</span>
         </div>
 
         <nav className="sidebar-nav">
@@ -601,13 +597,13 @@ export default function AliasRelay() {
               <section className="generator-panel" aria-labelledby="generator-title">
                 <div className="panel-heading">
                   <span className="panel-label" id="generator-title">01 / Create an alias</span>
-                  <span className="source-label">{gmailRelayReady ? "Gmail relay active" : "Server relay required"}</span>
+                  <span className="source-label">{gmailRelayReady ? `${sourceCount} Gmail source${sourceCount === 1 ? "" : "s"} active` : "Server relay required"}</span>
                 </div>
 
                 <div className="generator-form">
                   <span className="field-label">Choose your pattern</span>
                   <div className="mode-toggle" role="group" aria-label="Alias pattern">
-                    {(["dot", "plus"] as AliasType[]).map((type) => (
+                    {(["dot", "plus", "mixed", "custom"] as AliasType[]).map((type) => (
                       <button
                         className={`mode-button ${selectedType === type ? "is-active" : ""}`}
                         type="button"
@@ -615,8 +611,8 @@ export default function AliasRelay() {
                         key={type}
                         onClick={() => setSelectedType(type)}
                       >
-                        <span className="mode-symbol">{type === "dot" ? "." : "+"}</span>
-                        <span>{type === "dot" ? "Dot trick" : "Plus trick"}</span>
+                        <span className="mode-symbol">{type === "dot" ? "." : type === "plus" ? "+" : type === "mixed" ? ".+" : "@"}</span>
+                        <span>{type === "dot" ? "Dot trick" : type === "plus" ? "Plus trick" : type === "mixed" ? "Mixed trick" : "Custom domain"}</span>
                       </button>
                     ))}
                   </div>
@@ -625,7 +621,7 @@ export default function AliasRelay() {
                   <div className="address-preview">
                     <span className="preview-label">Your temporary address</span>
                     <div className="address-line">
-                      <code className="address-value">{currentAlias || (sourceLocal ? "No mailbox yet" : "Waiting for server source...")}</code>
+                      <code className="address-value">{currentAlias || (gmailRelayReady ? "No mailbox yet" : "Waiting for server source...")}</code>
                       <button
                         className="icon-button"
                         type="button"
@@ -642,17 +638,17 @@ export default function AliasRelay() {
                       <span className="meta-separator" aria-hidden="true" />
                       <span>{currentAlias ? "registered on server" : "waiting for relay"}</span>
                     </div>
-                    <button className="mailbox-cta" type="button" disabled={!currentAlias || isSaving} onClick={() => openMailbox(currentAlias, currentAliasType)}>
+                    <button className="mailbox-cta" type="button" disabled={!currentAlias || isSaving} onClick={() => openMailbox(currentAlias, currentAliasType, currentAliasRegistered)}>
                       <span>{isSaving ? "Saving..." : "Go to mailbox"}</span>
                       <Icon name="arrow" />
                     </button>
                   </div>
 
-                  <button className="primary-button" type="button" disabled={!sourceLocal} onClick={generateNewAlias}>
-                    <span>{sourceLocal ? "Generate new alias" : "Waiting for server source..."}</span>
+                   <button className="primary-button" type="button" disabled={!gmailRelayReady || (selectedType === "custom" && customDomainCount === 0) || isSaving} onClick={() => void generateNewAlias()}>
+                     <span>{isSaving ? "Generating..." : gmailRelayReady ? selectedType === "custom" && customDomainCount === 0 ? "No custom domain configured" : "Generate new alias" : "Waiting for server source..."}</span>
                     <span className="button-arrow" aria-hidden="true">&gt;</span>
                   </button>
-                  <p className="panel-footnote">Click Go to mailbox to register and save this address.</p>
+                   <p className="panel-footnote">Addresses are registered on the server as soon as they are generated.</p>
                 </div>
               </section>
             </div>
@@ -706,7 +702,7 @@ export default function AliasRelay() {
                 <h1 className="mailbox-title" id="mailbox-address">{route.address}</h1>
                 <div className="mailbox-meta">
                   <span><span className="status-dot" aria-hidden="true" /> Listening for new mail</span>
-                  <span>{mailbox?.type === "dot" ? "Dot" : "Plus"} trick</span>
+                  <span>{mailbox?.type === "dot" ? "Dot" : mailbox?.type === "plus" ? "Plus" : mailbox?.type === "mixed" ? "Mixed" : "Custom domain"} {mailbox?.type === "custom" ? "" : "trick"}</span>
                   <span>Opened from URL fragment</span>
                 </div>
               </div>

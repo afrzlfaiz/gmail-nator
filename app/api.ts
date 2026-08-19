@@ -31,7 +31,8 @@ export type ApiHealth = {
   storage: "memory" | "postgres";
   gmailPollingConfigured: boolean;
   gmailRelayReady: boolean;
-  sourceLocalPart: string | null;
+  gmailSourceCount: number;
+  customDomainCount: number;
 };
 
 export class ApiError extends Error {
@@ -44,6 +45,7 @@ export class ApiError extends Error {
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...init?.headers,

@@ -14,7 +14,7 @@ function emailAddresses(value: string) {
 
 export function extractRecipientCandidates(payload: GmailPayload | undefined) {
   const candidates: string[] = [];
-  const preferredHeaders = ["delivered-to", "x-original-to", "envelope-to", "to"];
+  const preferredHeaders = ["x-original-recipient", "delivered-to", "x-original-to", "envelope-to", "to", "cc"];
 
   for (const name of preferredHeaders) {
     const value = headerValue(payload, name);
@@ -65,7 +65,7 @@ function collectBodies(payload: GmailPayload | undefined) {
   return bodies;
 }
 
-export function parseGmailMessage(message: gmail_v1.Schema$Message, mailboxId: string, recipient: string): NewMessage {
+export function parseGmailMessage(message: gmail_v1.Schema$Message, mailboxId: string, sourceId: string, recipient: string): NewMessage {
   if (!message.id) {
     throw new Error("Gmail message is missing its id");
   }
@@ -75,6 +75,7 @@ export function parseGmailMessage(message: gmail_v1.Schema$Message, mailboxId: s
 
   return {
     mailboxId,
+    sourceId,
     gmailMessageId: message.id,
     sender: headerValue(message.payload, "from"),
     recipient: normalizeAddress(recipient),

@@ -1,1 +1,1 @@
-export type AliasType = "dot" | "plus";
+export type AliasType = "dot" | "plus" | "mixed" | "custom";

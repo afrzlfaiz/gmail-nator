@@ -1,34 +1,28 @@
 import { createApp } from "./app";
-import { hasGmailConfig, loadConfig } from "./config";
+import { loadConfig } from "./config";
 import { CleanupJob } from "./cleanup";
-import { createGmailClient } from "./gmail/client";
-import { GmailPoller } from "./gmail/poller";
+import { GmailSourceManager } from "./gmail/source-manager";
 import { createStore } from "./store";
 
 export async function startApiServer() {
   const config = loadConfig();
   const store = createStore(config);
   const cleanup = new CleanupJob(store, config);
-  const poller = hasGmailConfig(config) ? new GmailPoller(createGmailClient(config), store, config) : null;
+  const sourceManager = new GmailSourceManager(store, config);
+  await sourceManager.start();
   const app = createApp(store, config, {
-    gmailRelayReady: () => poller?.isReady() ?? false,
+    sourceManager,
   });
   const server = app.listen(config.port, () => {
     console.info(`[INFO] API listening on port ${config.port}`);
-    if (!poller) {
-      console.warn("[WARN] Gmail polling disabled; OAuth environment variables are incomplete");
-    }
   });
 
   cleanup.start();
-  if (poller) {
-    void poller.start();
-  }
 
   const shutdown = (signal: string) => {
     console.info(`[INFO] ${signal} received; shutting down`);
     cleanup.stop();
-    poller?.stop();
+    sourceManager.stop();
     server.close((error) => {
       void store.close().finally(() => {
         if (error) {
